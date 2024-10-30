@@ -443,7 +443,7 @@ public class EvmToolCommand implements Runnable {
       final Stopwatch stopwatch = Stopwatch.createUnstarted();
       long lastTime = 0;
       long totalTime = 0;
-      long totalSquaredTime = 0; // calculate std dev of sample times
+      double totalSquaredTime = 0; // calculate std dev of sample times
       while (remainingIters-- > 0) {
         final boolean isSample = remainingIters < samples;
 
@@ -567,8 +567,8 @@ public class EvmToolCommand implements Runnable {
             if (samples == 1) {
               resultLine.put("std_dev_timens", 0);
             } else {
-              long preStdDev = samples * totalSquaredTime - totalTime * totalTime;
-              resultLine.put("std_dev_timens", Math.sqrt((double) preStdDev) / samples);
+              double preStdDev = samples * totalSquaredTime - ((double) totalTime) * totalTime;
+              resultLine.put("std_dev_timens", Math.sqrt(preStdDev) / samples);
             }
           }
           out.println(resultLine);

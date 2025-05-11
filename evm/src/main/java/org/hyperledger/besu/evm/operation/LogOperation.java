@@ -19,6 +19,7 @@ import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -50,10 +51,14 @@ public class LogOperation extends AbstractOperation {
     final long numBytes = clampedToLong(frame.popStackItem());
 
     final long cost = gasCalculator().logOperationGasCost(frame, dataLocation, numBytes, numTopics);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0xA0 + numTopics, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(dataLocation, numBytes) - frame.memoryWordSize())},
+            {GasUsageCoefficients.LOG_OPERATION_DATA_BYTE_GAS_COST, (int) numBytes}};
     if (frame.isStatic()) {
-      return new OperationResult(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, gasUsageCoefficients);
     } else if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     final Address address = frame.getRecipientAddress();
@@ -67,6 +72,6 @@ public class LogOperation extends AbstractOperation {
     }
 
     frame.addLog(new Log(address, data, builder.build()));
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

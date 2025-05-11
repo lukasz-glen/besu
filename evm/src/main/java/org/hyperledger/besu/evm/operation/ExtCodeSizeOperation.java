@@ -16,6 +16,7 @@ package org.hyperledger.besu.evm.operation;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.code.EOFLayout;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -74,8 +75,11 @@ public class ExtCodeSizeOperation extends AbstractOperation {
       final boolean accountIsWarm =
           frame.warmUpAddress(address) || gasCalculator().isPrecompile(address);
       final long cost = cost(accountIsWarm);
+      final int[][] gasUsageCoefficients = new int[][]{
+              {0x3B, 1},
+              {accountIsWarm ? GasUsageCoefficients.WARM_ACCOUNT_ACCESS_COST : GasUsageCoefficients.COLD_ACCOUNT_ACCESS_COST, 1}};
       if (frame.getRemainingGas() < cost) {
-        return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+        return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
       } else {
         final Account account = frame.getWorldUpdater().get(address);
 
@@ -94,12 +98,18 @@ public class ExtCodeSizeOperation extends AbstractOperation {
           }
         }
         frame.pushStackItem(codeSize);
-        return new OperationResult(cost, null);
+        return new OperationResultWithCost(cost, null, gasUsageCoefficients);
       }
     } catch (final UnderflowException ufe) {
-      return new OperationResult(cost(true), ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      final int[][] gasUsageCoefficients = new int[][]{
+              {0x3B, 1},
+              {GasUsageCoefficients.WARM_ACCOUNT_ACCESS_COST, 1}};
+      return new OperationResultWithCost(cost(true), ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, gasUsageCoefficients);
     } catch (final OverflowException ofe) {
-      return new OperationResult(cost(true), ExceptionalHaltReason.TOO_MANY_STACK_ITEMS);
+      final int[][] gasUsageCoefficients = new int[][]{
+              {0x3B, 1},
+              {GasUsageCoefficients.WARM_ACCOUNT_ACCESS_COST, 1}};
+      return new OperationResultWithCost(cost(true), ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, gasUsageCoefficients);
     }
   }
 }

@@ -19,6 +19,7 @@ import static org.hyperledger.besu.evm.internal.Words.clampedMultiply;
 import static org.hyperledger.besu.evm.internal.Words.clampedToInt;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -93,6 +94,11 @@ public class BigIntegerModularExponentiationPrecompiledContract
   @Override
   public long gasRequirement(final Bytes input) {
     return gasCalculator().modExpGasCost(input);
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{{GasUsageCoefficients.PRECOMPILED_MOD_EXP, (int) gasRequirement(input)}};
   }
 
   @Nonnull

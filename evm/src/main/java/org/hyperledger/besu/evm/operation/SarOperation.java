@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class SarOperation extends AbstractFixedCostOperation {
 
   /** The Sar operation success result. */
-  static final OperationResult sarSuccess = new OperationResult(3, null);
+  static final OperationResult sarSuccess = new OperationResultFixedCost(3, null, 0x1d);
 
   private static final Bytes ALL_BITS =
       Bytes.fromHexString("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");

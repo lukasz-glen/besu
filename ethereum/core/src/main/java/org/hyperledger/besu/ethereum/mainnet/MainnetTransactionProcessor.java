@@ -33,6 +33,7 @@ import org.hyperledger.besu.ethereum.processing.TransactionProcessingResult;
 import org.hyperledger.besu.ethereum.transaction.TransactionInvalidReason;
 import org.hyperledger.besu.ethereum.trie.MerkleTrieException;
 import org.hyperledger.besu.evm.Code;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.blockhash.BlockHashLookup;
@@ -40,6 +41,7 @@ import org.hyperledger.besu.evm.code.CodeInvalid;
 import org.hyperledger.besu.evm.code.CodeV0;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.gascalculator.FrontierGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.processor.AbstractMessageProcessor;
 import org.hyperledger.besu.evm.processor.ContractCreationProcessor;
@@ -370,12 +372,40 @@ public class MainnetTransactionProcessor {
           intrinsicGas);
 
       final WorldUpdater worldUpdater = evmWorldUpdater.updater();
+
+      final Bytes transactionPayload = transaction.getPayload();
+      final int transactionPayloadZeros = (int) FrontierGasCalculator.zeroBytes(transactionPayload);
+      int[][] initialGasUsageCoefficients = new int[][] {
+              {GasUsageCoefficients.TX_INITIAL_GAS, (int) intrinsicGas},
+              {GasUsageCoefficients.NON_ZERO_CALLDATA_BYTE, transactionPayload.size() - transactionPayloadZeros},
+              {GasUsageCoefficients.ZERO_CALLDATA_BYTE, transactionPayloadZeros},
+              {GasUsageCoefficients.ACCESS_LIST_ADDRESS_COST, accessListEntries.size()},
+              {GasUsageCoefficients.ACCESS_LIST_STORAGE_COST, accessListStorageCount},
+      };
+      final GasUsageCoefficients gasUsageCoefficientsSimulation = new GasUsageCoefficients(
+              blockHeader.getNumber(),
+              transaction.getHash().toHexString()
+      );
+      gasUsageCoefficientsSimulation.addGasUsage(initialGasUsageCoefficients);
+      final GasUsageCoefficients gasUsageCoefficients = new GasUsageCoefficients(
+              blockHeader.getNumber(),
+              transaction.getHash().toHexString()
+      );
+      gasUsageCoefficients.addGasUsage(initialGasUsageCoefficients);
+      final ImmutableMap.Builder<String, Object> contextVariablesBuilderSimulation =
+              ImmutableMap.<String, Object>builder()
+                      .put(KEY_IS_PERSISTING_PRIVATE_STATE, isPersistingPrivateState)
+                      .put(KEY_TRANSACTION, transaction)
+                      .put(KEY_TRANSACTION_HASH, transaction.getHash())
+                      .put("GAS_USAGE_COEFFICIENTS", gasUsageCoefficientsSimulation);
       final ImmutableMap.Builder<String, Object> contextVariablesBuilder =
           ImmutableMap.<String, Object>builder()
               .put(KEY_IS_PERSISTING_PRIVATE_STATE, isPersistingPrivateState)
               .put(KEY_TRANSACTION, transaction)
-              .put(KEY_TRANSACTION_HASH, transaction.getHash());
+              .put(KEY_TRANSACTION_HASH, transaction.getHash())
+              .put("GAS_USAGE_COEFFICIENTS", gasUsageCoefficients);
       if (privateMetadataUpdater != null) {
+        contextVariablesBuilderSimulation.put(KEY_PRIVATE_METADATA_UPDATER, privateMetadataUpdater);
         contextVariablesBuilder.put(KEY_PRIVATE_METADATA_UPDATER, privateMetadataUpdater);
       }
 
@@ -384,7 +414,6 @@ public class MainnetTransactionProcessor {
       final MessageFrame.Builder commonMessageFrameBuilder =
           MessageFrame.builder()
               .maxStackSize(maxStackSize)
-              .worldUpdater(worldUpdater.updater())
               .initialGas(gasAvailable)
               .originator(senderAddress)
               .gasPrice(transactionGasPrice)
@@ -396,7 +425,6 @@ public class MainnetTransactionProcessor {
               .completer(__ -> {})
               .miningBeneficiary(miningBeneficiary)
               .blockHashLookup(blockHashLookup)
-              .contextVariables(contextVariablesBuilder.build())
               .accessListWarmStorage(storageList);
 
       if (transaction.getVersionedHashes().isPresent()) {
@@ -406,6 +434,8 @@ public class MainnetTransactionProcessor {
         commonMessageFrameBuilder.versionedHashes(Optional.empty());
       }
 
+      final MessageFrame initialFrameSimulation;
+      final WorldUpdater worldUpdaterSimulation = worldUpdater.updater();
       final MessageFrame initialFrame;
       if (transaction.isContractCreation()) {
         final Address contractAddress =
@@ -413,14 +443,22 @@ public class MainnetTransactionProcessor {
 
         final Bytes initCodeBytes = transaction.getPayload();
         Code code = contractCreationProcessor.getCodeFromEVMForCreation(initCodeBytes);
-        initialFrame =
-            commonMessageFrameBuilder
+        commonMessageFrameBuilder
                 .type(MessageFrame.Type.CONTRACT_CREATION)
                 .address(contractAddress)
                 .contract(contractAddress)
                 .inputData(initCodeBytes.slice(code.getSize()))
                 .code(code)
-                .accessListWarmAddresses(warmAddressList)
+                .accessListWarmAddresses(warmAddressList);
+        initialFrameSimulation =
+                commonMessageFrameBuilder
+                .worldUpdater(worldUpdaterSimulation.updater())
+                .contextVariables(contextVariablesBuilderSimulation.build())
+                .build();
+        initialFrame =
+                commonMessageFrameBuilder
+                .worldUpdater(worldUpdater.updater())
+                .contextVariables(contextVariablesBuilder.build())
                 .build();
       } else {
         @SuppressWarnings("OptionalGetWithoutIsPresent") // isContractCall tests isPresent
@@ -431,35 +469,51 @@ public class MainnetTransactionProcessor {
           warmAddressList.add(maybeContract.get().codeDelegationAddress().get());
         }
 
-        initialFrame =
-            commonMessageFrameBuilder
+        commonMessageFrameBuilder
                 .type(MessageFrame.Type.MESSAGE_CALL)
                 .address(to)
                 .contract(to)
                 .inputData(transaction.getPayload())
                 .code(
-                    maybeContract
-                        .map(
-                            c -> {
-                              if (c.hasDelegatedCode()) {
-                                return messageCallProcessor.getCodeFromEVM(
-                                    c.getCodeDelegationTargetHash().get(),
-                                    c.getCodeDelegationTargetCode().get());
-                              }
+                        maybeContract
+                                .map(
+                                        c -> {
+                                          if (c.hasDelegatedCode()) {
+                                            return messageCallProcessor.getCodeFromEVM(
+                                                    c.getCodeDelegationTargetHash().get(),
+                                                    c.getCodeDelegationTargetCode().get());
+                                          }
 
-                              return messageCallProcessor.getCodeFromEVM(
-                                  c.getCodeHash(), c.getCode());
-                            })
-                        .orElse(CodeV0.EMPTY_CODE))
-                .accessListWarmAddresses(warmAddressList)
+                                          return messageCallProcessor.getCodeFromEVM(
+                                                  c.getCodeHash(), c.getCode());
+                                        })
+                                .orElse(CodeV0.EMPTY_CODE))
+                .accessListWarmAddresses(warmAddressList);
+        initialFrameSimulation = commonMessageFrameBuilder
+                .worldUpdater(worldUpdaterSimulation.updater())
+                .contextVariables(contextVariablesBuilderSimulation.build())
+                .build();
+        initialFrame = commonMessageFrameBuilder
+                .worldUpdater(worldUpdater.updater())
+                .contextVariables(contextVariablesBuilder.build())
                 .build();
       }
-      Deque<MessageFrame> messageFrameStack = initialFrame.getMessageFrameStack();
 
       if (initialFrame.getCode().isValid()) {
+        Deque<MessageFrame> messageFrameStackSimulation = initialFrameSimulation.getMessageFrameStack();
+        while (!messageFrameStackSimulation.isEmpty()) {
+          process(messageFrameStackSimulation.peekFirst(), OperationTracer.NO_TRACING);
+        }
+        worldUpdaterSimulation.revert();
+
+        Deque<MessageFrame> messageFrameStack = initialFrame.getMessageFrameStack();
         while (!messageFrameStack.isEmpty()) {
           process(messageFrameStack.peekFirst(), operationTracer);
         }
+
+//        System.out.println("Transaction " + transaction.getHash().toHexString() + " simulation " + initialFrameSimulation.getState() + " real " + initialFrame.getState());
+        final GasUsageCoefficients.COMPARISON_OUTCOME comparisonToSimulation = gasUsageCoefficients.compareState(gasUsageCoefficientsSimulation);
+        gasUsageCoefficients.setComparisonToSimulation(comparisonToSimulation);
       } else {
         initialFrame.setState(MessageFrame.State.EXCEPTIONAL_HALT);
         initialFrame.setExceptionalHaltReason(Optional.of(ExceptionalHaltReason.INVALID_CODE));
@@ -505,6 +559,9 @@ public class MainnetTransactionProcessor {
           .log();
       final long gasUsedByTransaction = transaction.getGasLimit() - initialFrame.getRemainingGas();
 
+      gasUsageCoefficients.addGasUsage(new int[][]{{GasUsageCoefficients.TX_TOTAL_GAS, (int) gasUsedByTransaction}});
+      gasUsageCoefficients.addGasUsage(new int[][]{{GasUsageCoefficients.TX_REFUND_GAS, (int) refundedGas}});
+
       // update the coinbase
       final long usedGas = transaction.getGasLimit() - refundedGas;
       final CoinbaseFeePriceCalculator coinbaseCalculator;
@@ -517,7 +574,7 @@ public class MainnetTransactionProcessor {
               ValidationResult.invalid(
                   TransactionInvalidReason.TRANSACTION_PRICE_TOO_LOW,
                   "transaction price must be greater than base fee"),
-              Optional.empty());
+              Optional.empty()).setGasUsageCoefficients(gasUsageCoefficients);
         }
         coinbaseCalculator = coinbaseFeePriceCalculator;
       } else {
@@ -555,7 +612,7 @@ public class MainnetTransactionProcessor {
             gasUsedByTransaction,
             refundedGas,
             initialFrame.getOutputData(),
-            validationResult);
+            validationResult).setGasUsageCoefficients(gasUsageCoefficients);
       } else {
         if (initialFrame.getExceptionalHaltReason().isPresent()) {
           LOG.debug(
@@ -570,7 +627,7 @@ public class MainnetTransactionProcessor {
               initialFrame.getRevertReason().get());
         }
         return TransactionProcessingResult.failed(
-            gasUsedByTransaction, refundedGas, validationResult, initialFrame.getRevertReason());
+            gasUsedByTransaction, refundedGas, validationResult, initialFrame.getRevertReason()).setGasUsageCoefficients(gasUsageCoefficients);
       }
     } catch (final MerkleTrieException re) {
       operationTracer.traceEndTransaction(

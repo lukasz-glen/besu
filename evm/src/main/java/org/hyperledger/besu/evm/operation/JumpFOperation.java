@@ -27,10 +27,10 @@ public class JumpFOperation extends AbstractOperation {
   public static final int OPCODE = 0xe5;
 
   /** The Jump F success operation result. */
-  static final OperationResult jumpfSuccess = new OperationResult(5, null);
+  static final OperationResult jumpfSuccess = new OperationResultFixedCost(5, null, OPCODE);
 
   static final OperationResult jumpfStackOverflow =
-      new OperationResult(5, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS);
+      new OperationResultFixedCost(5, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, OPCODE);
 
   /**
    * Instantiates a new Jump F operation.

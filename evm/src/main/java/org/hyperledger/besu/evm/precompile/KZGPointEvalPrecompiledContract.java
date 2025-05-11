@@ -15,6 +15,7 @@
 package org.hyperledger.besu.evm.precompile;
 
 import org.hyperledger.besu.crypto.Hash;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.internal.Words;
@@ -101,6 +102,11 @@ public class KZGPointEvalPrecompiledContract implements PrecompiledContract {
   public long gasRequirement(final Bytes input) {
     // As defined in EIP-4844
     return 50000;
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{{GasUsageCoefficients.PRECOMPILED_KZG_POINT_EVAL, 1}};
   }
 
   @Nonnull

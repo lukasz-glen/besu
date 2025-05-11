@@ -20,6 +20,7 @@ import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.Code;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.code.CodeInvalid;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -27,6 +28,7 @@ import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.Words;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -38,11 +40,11 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
 
   /** The constant UNDERFLOW_RESPONSE. */
   protected static final OperationResult UNDERFLOW_RESPONSE =
-      new OperationResult(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      new OperationResultFixedCost(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, GasUsageCoefficients.INSUFFICIENT_STACK_ITEMS);
 
   /** The constant UNDERFLOW_RESPONSE. */
   protected static final OperationResult INVALID_OPERATION =
-      new OperationResult(0L, ExceptionalHaltReason.INVALID_OPERATION);
+      new OperationResultFixedCost(0L, ExceptionalHaltReason.INVALID_OPERATION, GasUsageCoefficients.INVALID_OPERATION);
 
   /** The EOF Version this create operation requires initcode to be in */
   protected final int eofVersion;
@@ -83,9 +85,9 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
 
     final long cost = cost(frame, codeSupplier);
     if (frame.isStatic()) {
-      return new OperationResult(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultRawCost(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, this.getOpcode());
     } else if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultRawCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, this.getOpcode());
     }
     final Wei value = Wei.wrap(frame.getStackItem(0));
 
@@ -98,7 +100,7 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
 
     if (code != null && code.getSize() > evm.getMaxInitcodeSize()) {
       frame.popStackItems(getStackItemsConsumed());
-      return new OperationResult(cost, ExceptionalHaltReason.CODE_TOO_LARGE);
+      return new OperationResultRawCost(cost, ExceptionalHaltReason.CODE_TOO_LARGE, this.getOpcode());
     }
 
     if (value.compareTo(account.getBalance()) > 0
@@ -118,7 +120,7 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
         frame.incrementRemainingGas(cost);
       }
     }
-    return new OperationResult(cost, null, getPcIncrement());
+    return new OperationResultRawCost(cost, null, getPcIncrement(), this.getOpcode());
   }
 
   /**
@@ -181,6 +183,11 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
         gasCalculator().gasAvailableForChildCreate(parent.getRemainingGas());
     parent.decrementRemainingGas(childGasStipend);
 
+    Map<String, Object> contextVariables =
+            parent.hasContextVariable("GAS_USAGE_COEFFICIENTS") ?
+                    Map.of("GAS_USAGE_COEFFICIENTS", ((GasUsageCoefficients) parent.getContextVariable("GAS_USAGE_COEFFICIENTS")).spawnChild()) :
+                    Map.of();
+
     // frame addition is automatically handled by parent messageFrameStack
     MessageFrame.builder()
         .parentMessageFrame(parent)
@@ -194,6 +201,7 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
         .apparentValue(value)
         .code(code)
         .completer(child -> complete(parent, child, evm))
+        .contextVariables(contextVariables)
         .build();
 
     parent.setState(MessageFrame.State.CODE_SUSPENDED);

@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm.operation;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -40,12 +41,17 @@ public class MCopyOperation extends AbstractOperation {
     final long length = clampedToLong(frame.popStackItem());
 
     final long cost = gasCalculator().dataCopyOperationGasCost(frame, Math.max(src, dst), length);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0x5e, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(Math.max(src, dst), length) - frame.memoryWordSize())},
+            {GasUsageCoefficients.COPY_WORD_GAS_COST, (int) ((length + 31) / 32)}
+    };
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     frame.copyMemory(dst, src, length, true);
 
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

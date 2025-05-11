@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class SLtOperation extends AbstractFixedCostOperation {
 
   /** The Slt operation success result. */
-  static final OperationResult sltSuccess = new OperationResult(3, null);
+  static final OperationResult sltSuccess = new OperationResultFixedCost(3, null, 0x12);
 
   /**
    * Instantiates a new SLt operation.

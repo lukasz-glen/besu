@@ -39,7 +39,7 @@ public class BaseFeeOperation extends AbstractFixedCostOperation {
       final MessageFrame frame, final EVM evm) {
     final Optional<Wei> maybeBaseFee = frame.getBlockValues().getBaseFee();
     if (maybeBaseFee.isEmpty()) {
-      return new Operation.OperationResult(gasCost, ExceptionalHaltReason.INVALID_OPERATION);
+      return new Operation.OperationResultFixedCost(gasCost, ExceptionalHaltReason.INVALID_OPERATION, 0x48);
     }
     frame.pushStackItem(maybeBaseFee.orElseThrow());
     return successResponse;

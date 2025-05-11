@@ -39,6 +39,7 @@ import org.hyperledger.besu.ethereum.processing.TransactionProcessingResult;
 import org.hyperledger.besu.ethereum.trie.MerkleTrieException;
 import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.worldview.BonsaiWorldState;
 import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.worldview.BonsaiWorldStateUpdateAccumulator;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.blockhash.BlockHashLookup;
 import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.evm.worldstate.WorldState;
@@ -165,6 +166,7 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
 
     boolean parallelizedTxFound = false;
     int nbParallelTx = 0;
+    final List<GasUsageCoefficients> gasUsageCoefficientsList = new ArrayList<>(transactions.size());
     for (int i = 0; i < transactions.size(); i++) {
       final Transaction transaction = transactions.get(i);
       if (!hasAvailableBlockBudget(blockHeader, transaction, currentGasUsed)) {
@@ -200,6 +202,8 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
 
       blockUpdater.commit();
       blockUpdater.markTransactionBoundary();
+
+      gasUsageCoefficientsList.add(transactionProcessingResult.getGasUsageCoefficients());
 
       currentGasUsed += transaction.getGasLimit() - transactionProcessingResult.getGasRemaining();
       if (transaction.getVersionedHashes().isPresent()) {
@@ -284,6 +288,65 @@ public abstract class AbstractBlockProcessor implements BlockProcessor {
     } catch (Exception e) {
       LOG.error("failed persisting block", e);
       return new BlockProcessingResult(Optional.empty(), e);
+    }
+
+    try (java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(java.nio.file.Paths.get("gasUsageCoefficientsTx.csv"), java. nio. charset. StandardCharsets.UTF_8, java. nio. file. StandardOpenOption.CREATE, java. nio. file. StandardOpenOption.APPEND)) {
+      final long blockNumber = blockHeader.getNumber();
+      for (int txid = 0; txid < gasUsageCoefficientsList.size(); txid++) {
+        final GasUsageCoefficients gasUsageCoefficients = gasUsageCoefficientsList.get(txid);
+        writer.write(String.format("%d, %d, %s, %s", blockNumber, txid, gasUsageCoefficients.getTransactionHash(), gasUsageCoefficients.getComparisonToSimulation()));
+        writer.newLine();
+      }
+    } catch (java.io.IOException ex) {
+      throw new RuntimeException(ex);
+    }
+
+    // the whole block
+//    List<GasUsageCoefficients> allGasUsageCoefficients = new ArrayList<>();
+//    for (int i = 0; i < gasUsageCoefficientsList.size(); i++) {
+//      gasUsageCoefficientsList.get(i).collectChildren(allGasUsageCoefficients);
+//    }
+//    int[][] aggregatedGasUsageCoefficients = GasUsageCoefficients.aggregateGasUsageCoefficients(allGasUsageCoefficients);
+//    try (java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(java.nio.file.Paths.get("gasUsageCoefficientsData.csv"), java. nio. charset. StandardCharsets.UTF_8, java. nio. file. StandardOpenOption.CREATE, java. nio. file. StandardOpenOption.APPEND)) {
+//      final long blockNumber = blockHeader.getNumber();
+//      for (int i = 0 ; i < aggregatedGasUsageCoefficients[0].length ; i ++) {
+//        if (aggregatedGasUsageCoefficients[0][i] > 0) {
+//          writer.write(String.format("%d, %d, %d", blockNumber, i, aggregatedGasUsageCoefficients[0][i]));
+//          writer.newLine();
+//        }
+//      }
+//      for (int i = 0 ; i < aggregatedGasUsageCoefficients[1].length ; i ++) {
+//        if (aggregatedGasUsageCoefficients[1][i] > 0) {
+//          writer.write(String.format("%d, %d, %d", blockNumber, GasUsageCoefficients.MEMORY_WORD_GAS_COST, aggregatedGasUsageCoefficients[1][i]));
+//          writer.newLine();
+//        }
+//      }
+//    } catch (java.io.IOException ex) {
+//      throw new RuntimeException(ex);
+//    }
+
+    // per tx
+    try (java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(java.nio.file.Paths.get("gasUsageCoefficientsData.csv"), java. nio. charset. StandardCharsets.UTF_8, java. nio. file. StandardOpenOption.CREATE, java. nio. file. StandardOpenOption.APPEND)) {
+      final long blockNumber = blockHeader.getNumber();
+      for (int txid = 0; txid < gasUsageCoefficientsList.size(); txid++) {
+        List<GasUsageCoefficients> allGasUsageCoefficients = new ArrayList<>();
+        gasUsageCoefficientsList.get(txid).collectChildren(allGasUsageCoefficients);
+        int[][] aggregatedGasUsageCoefficients = GasUsageCoefficients.aggregateGasUsageCoefficients(allGasUsageCoefficients);
+        for (int i = 0; i < aggregatedGasUsageCoefficients[0].length; i++) {
+          if (aggregatedGasUsageCoefficients[0][i] > 0) {
+            writer.write(String.format("%d, %d, %d, %d", blockNumber, txid, i, aggregatedGasUsageCoefficients[0][i]));
+            writer.newLine();
+          }
+        }
+        for (int i = 0; i < aggregatedGasUsageCoefficients[1].length; i++) {
+          if (aggregatedGasUsageCoefficients[1][i] > 0) {
+            writer.write(String.format("%d, %d, %d, %d", blockNumber, txid, GasUsageCoefficients.MEMORY_WORD_GAS_COST, aggregatedGasUsageCoefficients[1][i]));
+            writer.newLine();
+          }
+        }
+      }
+    } catch (java.io.IOException ex) {
+      throw new RuntimeException(ex);
     }
 
     return new BlockProcessingResult(

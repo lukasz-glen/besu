@@ -20,6 +20,8 @@ import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
 import org.apache.tuweni.bytes.Bytes;
 
+import java.util.stream.IntStream;
+
 /** The Push operation. */
 public class PushOperation extends AbstractFixedCostOperation {
 
@@ -32,7 +34,9 @@ public class PushOperation extends AbstractFixedCostOperation {
   private final int length;
 
   /** The Push operation success result. */
-  static final OperationResult pushSuccess = new OperationResult(3, null);
+  static final OperationResult[] pushSuccess = IntStream.range(0, 33)
+          .mapToObj(i -> new OperationResultFixedCost(3, null, PUSH_BASE + i))
+          .toList().toArray(new OperationResult[33]);
 
   /**
    * Instantiates a new Push operation.
@@ -86,6 +90,6 @@ public class PushOperation extends AbstractFixedCostOperation {
     }
     frame.pushStackItem(push);
     frame.setPC(pc + pushSize);
-    return pushSuccess;
+    return pushSuccess[pushSize];
   }
 }

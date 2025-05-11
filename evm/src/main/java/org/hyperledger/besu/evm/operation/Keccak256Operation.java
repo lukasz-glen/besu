@@ -18,6 +18,7 @@ import static org.hyperledger.besu.crypto.Hash.keccak256;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -42,12 +43,16 @@ public class Keccak256Operation extends AbstractOperation {
     final long length = clampedToLong(frame.popStackItem());
 
     final long cost = gasCalculator().keccak256OperationGasCost(frame, from, length);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0x20, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(from, length) - frame.memoryWordSize())},
+            {GasUsageCoefficients.KECCAK256_OPERATION_WORD_GAS_COST, (int) ((length + 31) / 32)}};
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     final Bytes bytes = frame.readMutableMemory(from, length);
     frame.pushStackItem(keccak256(bytes));
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

@@ -19,6 +19,7 @@ import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.code.EOFLayout;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -87,9 +88,15 @@ public class ExtCodeCopyOperation extends AbstractOperation {
     final boolean accountIsWarm =
         frame.warmUpAddress(address) || gasCalculator().isPrecompile(address);
     final long cost = cost(frame, memOffset, numBytes, accountIsWarm);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0x3C, 1},
+            {accountIsWarm ? GasUsageCoefficients.WARM_ACCOUNT_ACCESS_COST : GasUsageCoefficients.COLD_ACCOUNT_ACCESS_COST, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(memOffset, numBytes) - frame.memoryWordSize())},
+            {GasUsageCoefficients.COPY_WORD_GAS_COST, (int) ((numBytes + 31) / 32)}
+    };
 
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     final Account account = frame.getWorldUpdater().get(address);
@@ -104,6 +111,6 @@ public class ExtCodeCopyOperation extends AbstractOperation {
       frame.writeMemory(memOffset, sourceOffset, numBytes, code);
     }
 
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

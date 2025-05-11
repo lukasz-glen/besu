@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class DivOperation extends AbstractFixedCostOperation {
 
   /** The Div success. */
-  static final OperationResult divSuccess = new OperationResult(5, null);
+  static final OperationResult divSuccess = new OperationResultFixedCost(5, null, 0x04);
 
   /**
    * Instantiates a new Div operation.

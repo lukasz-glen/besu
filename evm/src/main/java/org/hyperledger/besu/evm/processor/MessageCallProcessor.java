@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm.processor;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.ModificationNotAllowedException;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -157,6 +158,8 @@ public class MessageCallProcessor extends AbstractMessageProcessor {
       frame.setState(MessageFrame.State.EXCEPTIONAL_HALT);
       operationTracer.tracePrecompileCall(frame, gasRequirement, null);
     } else {
+      GasUsageCoefficients gasUsageCoefficients = frame.getContextVariable("GAS_USAGE_COEFFICIENTS");
+      gasUsageCoefficients.addGasUsage(contract.gasUsageCoefficients(frame.getInputData()));
       frame.decrementRemainingGas(gasRequirement);
       final PrecompiledContract.PrecompileContractResult result =
           contract.computePrecompile(frame.getInputData(), frame);
@@ -168,6 +171,9 @@ public class MessageCallProcessor extends AbstractMessageProcessor {
         frame.setRevertReason(result.getOutput());
       } else {
         frame.setOutputData(result.getOutput());
+      }
+      if (result.getState() == MessageFrame.State.COMPLETED_SUCCESS || result.getState() == MessageFrame.State.COMPLETED_FAILED) {
+        gasUsageCoefficients.setState(result.getState());
       }
       frame.setState(result.getState());
       frame.setExceptionalHaltReason(result.getHaltReason());

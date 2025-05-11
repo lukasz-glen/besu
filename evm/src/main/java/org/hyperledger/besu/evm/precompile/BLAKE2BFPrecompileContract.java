@@ -18,6 +18,7 @@ import static java.util.Arrays.copyOfRange;
 import static org.hyperledger.besu.crypto.Blake2bfMessageDigest.Blake2bfDigest.MESSAGE_LENGTH_BYTES;
 
 import org.hyperledger.besu.crypto.Hash;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -60,6 +61,11 @@ public class BLAKE2BFPrecompileContract extends AbstractPrecompiledContract {
     final byte[] roundsBytes = copyOfRange(input.toArrayUnsafe(), 0, 4);
     final BigInteger rounds = new BigInteger(1, roundsBytes);
     return rounds.longValueExact();
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{{GasUsageCoefficients.PRECOMPILED_BLAKE2BF_ROUNDS, new BigInteger(1, copyOfRange(input.toArrayUnsafe(), 0, 4)).intValueExact()}};
   }
 
   @Nonnull

@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class ShlOperation extends AbstractFixedCostOperation {
 
   /** The Shl operation success result. */
-  static final OperationResult shlSuccess = new OperationResult(3, null);
+  static final OperationResult shlSuccess = new OperationResultFixedCost(3, null, 0x1b);
 
   /**
    * Instantiates a new Shl operation.

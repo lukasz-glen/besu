@@ -41,14 +41,14 @@ public class TLoadOperation extends AbstractOperation {
     try {
       final Bytes32 slot = UInt256.fromBytes(frame.popStackItem());
       if (frame.getRemainingGas() < cost) {
-        return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+        return new OperationResultFixedCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, 0x5C);
       } else {
         frame.pushStackItem(frame.getTransientStorageValue(frame.getRecipientAddress(), slot));
 
-        return new OperationResult(cost, null);
+        return new OperationResultFixedCost(cost, null, 0x5C);
       }
     } catch (final UnderflowException ufe) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      return new OperationResultFixedCost(cost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, 0x5C);
     }
   }
 }

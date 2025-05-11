@@ -18,6 +18,7 @@ import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.evm.Code;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.ModificationNotAllowedException;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.AccountState;
@@ -214,16 +215,19 @@ public abstract class AbstractMessageProcessor {
       revert(frame);
     }
 
+    GasUsageCoefficients gasUsageCoefficients = frame.getContextVariable("GAS_USAGE_COEFFICIENTS");
     if (frame.getState() == MessageFrame.State.COMPLETED_SUCCESS) {
       if (operationTracer != null) {
         operationTracer.traceContextExit(frame);
       }
+      gasUsageCoefficients.setState(MessageFrame.State.COMPLETED_SUCCESS);
       completedSuccess(frame);
     }
     if (frame.getState() == MessageFrame.State.COMPLETED_FAILED) {
       if (operationTracer != null) {
         operationTracer.traceContextExit(frame);
       }
+      gasUsageCoefficients.setState(MessageFrame.State.COMPLETED_SUCCESS);
       completedFailed(frame);
     }
   }

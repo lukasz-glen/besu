@@ -42,14 +42,14 @@ public class BlockHashOperation extends AbstractOperation {
   public OperationResult execute(final MessageFrame frame, final EVM evm) {
     final long cost = gasCalculator().getBlockHashOperationGasCost();
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultFixedCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, 0x40);
     }
 
     // Make sure we can convert to long
     final Bytes blockArg = frame.popStackItem().trimLeadingZeros();
     if (blockArg.size() > MAX_BLOCK_ARG_SIZE) {
       frame.pushStackItem(Hash.ZERO);
-      return new OperationResult(cost, null);
+      return new OperationResultFixedCost(cost, null, 0x40);
     }
 
     final long soughtBlock = blockArg.toLong();
@@ -68,7 +68,7 @@ public class BlockHashOperation extends AbstractOperation {
       frame.pushStackItem(blockHash);
     }
 
-    return new OperationResult(cost, null);
+    return new OperationResultFixedCost(cost, null, 0x40);
   }
 
   /**

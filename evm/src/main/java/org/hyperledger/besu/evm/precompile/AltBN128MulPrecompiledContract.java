@@ -16,6 +16,7 @@ package org.hyperledger.besu.evm.precompile;
 
 import org.hyperledger.besu.crypto.altbn128.AltBn128Point;
 import org.hyperledger.besu.crypto.altbn128.Fq;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -73,6 +74,11 @@ public class AltBN128MulPrecompiledContract extends AbstractAltBnPrecompiledCont
   @Override
   public long gasRequirement(final Bytes input) {
     return gasCost;
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{{GasUsageCoefficients.PRECOMPILED_EC_MUL, 1}};
   }
 
   @Nonnull

@@ -16,6 +16,7 @@ package org.hyperledger.besu.evm.operation;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
@@ -46,8 +47,14 @@ public class SLoadOperation extends AbstractOperation {
     warmCost = baseCost + gasCalculator.getWarmStorageReadCost();
     coldCost = baseCost + gasCalculator.getColdSloadCost();
 
-    warmSuccess = new OperationResult(warmCost, null);
-    coldSuccess = new OperationResult(coldCost, null);
+    warmSuccess = new OperationResultWithCost(warmCost, null, new int[][]{
+            {0x54, 1},
+            {GasUsageCoefficients.WARM_STORAGE_ACCESS_COST, 1}
+    });
+    coldSuccess = new OperationResultWithCost(coldCost, null, new int[][]{
+            {0x54, 1},
+            {GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+    });
   }
 
   @Override
@@ -59,16 +66,25 @@ public class SLoadOperation extends AbstractOperation {
       final boolean slotIsWarm = frame.warmUpStorage(address, key);
       final long cost = slotIsWarm ? warmCost : coldCost;
       if (frame.getRemainingGas() < cost) {
-        return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+        return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, new int[][]{
+                {0x54, 1},
+                {slotIsWarm ? GasUsageCoefficients.WARM_STORAGE_ACCESS_COST : GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+        });
       } else {
         frame.pushStackItem(account.getStorageValue(UInt256.fromBytes(key)));
 
         return slotIsWarm ? warmSuccess : coldSuccess;
       }
     } catch (final UnderflowException ufe) {
-      return new OperationResult(warmCost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      return new OperationResultWithCost(warmCost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, new int[][]{
+              {0x54, 1},
+              {GasUsageCoefficients.WARM_STORAGE_ACCESS_COST, 1}
+      });
     } catch (final OverflowException ofe) {
-      return new OperationResult(warmCost, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS);
+      return new OperationResultWithCost(warmCost, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, new int[][]{
+              {0x54, 1},
+              {GasUsageCoefficients.WARM_STORAGE_ACCESS_COST, 1}
+      });
     }
   }
 }

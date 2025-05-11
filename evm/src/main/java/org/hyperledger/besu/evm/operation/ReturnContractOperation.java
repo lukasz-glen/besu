@@ -18,6 +18,7 @@ import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.evm.Code;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -55,28 +56,32 @@ public class ReturnContractOperation extends AbstractOperation {
     final long length = clampedToLong(frame.popStackItem());
 
     final long cost = gasCalculator().memoryExpansionGasCost(frame, from, length);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {OPCODE, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(from, length) - frame.memoryWordSize())}
+    };
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     if (index >= code.getSubcontainerCount()) {
-      return new OperationResult(cost, ExceptionalHaltReason.NONEXISTENT_CONTAINER);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.NONEXISTENT_CONTAINER, gasUsageCoefficients);
     }
 
     Bytes auxData = frame.readMemory(from, length);
     if (code.getDataSize() + auxData.size() > evm.getMaxCodeSize()) {
-      return new OperationResult(cost, ExceptionalHaltReason.CODE_TOO_LARGE);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.CODE_TOO_LARGE, gasUsageCoefficients);
     }
     if (code.getDataSize() + auxData.size() < code.getDeclaredDataSize()) {
-      return new OperationResult(cost, ExceptionalHaltReason.DATA_TOO_SMALL);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.DATA_TOO_SMALL, gasUsageCoefficients);
     }
     Optional<Code> newCode = code.getSubContainer(index, auxData, evm);
     if (newCode.isEmpty()) {
-      return new OperationResult(cost, ExceptionalHaltReason.INVALID_CONTAINER);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INVALID_CONTAINER, gasUsageCoefficients);
     }
 
     frame.setCreatedCode(newCode.get());
     frame.setState(MessageFrame.State.CODE_SUCCESS);
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

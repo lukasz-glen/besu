@@ -20,6 +20,7 @@ import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.Code;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.code.CodeV0;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -29,6 +30,8 @@ import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.worldstate.CodeDelegationGasCostHelper;
 
 import org.apache.tuweni.bytes.Bytes;
+
+import java.util.Map;
 
 /**
  * A skeleton class for implementing call operations.
@@ -40,7 +43,7 @@ public abstract class AbstractCallOperation extends AbstractOperation {
 
   /** The constant UNDERFLOW_RESPONSE. */
   protected static final OperationResult UNDERFLOW_RESPONSE =
-      new OperationResult(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      new OperationResultFixedCost(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, GasUsageCoefficients.INSUFFICIENT_STACK_ITEMS);
 
   static final Bytes LEGACY_SUCCESS_STACK_ITEM = BYTES_ONE;
   static final Bytes LEGACY_FAILURE_STACK_ITEM = Bytes.EMPTY;
@@ -182,8 +185,9 @@ public abstract class AbstractCallOperation extends AbstractOperation {
     final Address to = to(frame);
     final boolean accountIsWarm = frame.warmUpAddress(to) || gasCalculator().isPrecompile(to);
     final long cost = cost(frame, accountIsWarm);
+    int[][] gasUsageCoefficients = gasUsageCoefficients(frame, accountIsWarm);
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
     frame.decrementRemainingGas(cost);
 
@@ -204,8 +208,8 @@ public abstract class AbstractCallOperation extends AbstractOperation {
           CodeDelegationGasCostHelper.codeDelegationGasCost(frame, gasCalculator(), contract);
 
       if (frame.getRemainingGas() < codeDelegationResolutionGas) {
-        return new Operation.OperationResult(
-            codeDelegationResolutionGas, ExceptionalHaltReason.INSUFFICIENT_GAS);
+        return new OperationResultWithCost(
+            codeDelegationResolutionGas, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
       }
 
       frame.decrementRemainingGas(codeDelegationResolutionGas);
@@ -223,7 +227,7 @@ public abstract class AbstractCallOperation extends AbstractOperation {
       frame.incrementRemainingGas(gasAvailableForChildCall(frame) + cost);
       frame.popStackItems(getStackItemsConsumed());
       frame.pushStackItem(LEGACY_FAILURE_STACK_ITEM);
-      return new OperationResult(cost, null);
+      return new OperationResultWithCost(cost, null, gasUsageCoefficients);
     }
 
     final Bytes inputData = frame.readMutableMemory(inputDataOffset(frame), inputDataLength(frame));
@@ -232,8 +236,13 @@ public abstract class AbstractCallOperation extends AbstractOperation {
 
     // invalid code results in a quick exit
     if (!code.isValid()) {
-      return new OperationResult(cost, ExceptionalHaltReason.INVALID_CODE, 0);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INVALID_CODE, 0, gasUsageCoefficients);
     }
+
+    Map<String, Object> contextVariables =
+            frame.hasContextVariable("GAS_USAGE_COEFFICIENTS") ?
+                    Map.of("GAS_USAGE_COEFFICIENTS", ((GasUsageCoefficients) frame.getContextVariable("GAS_USAGE_COEFFICIENTS")).spawnChild()) :
+                    Map.of();
 
     MessageFrame.builder()
         .parentMessageFrame(frame)
@@ -248,12 +257,13 @@ public abstract class AbstractCallOperation extends AbstractOperation {
         .code(code)
         .isStatic(isStatic(frame))
         .completer(child -> complete(frame, child))
+        .contextVariables(contextVariables)
         .build();
     // see note in stack depth check about incrementing cost
     frame.incrementRemainingGas(cost);
 
     frame.setState(MessageFrame.State.CODE_SUSPENDED);
-    return new OperationResult(cost, null, 0);
+    return new OperationResultWithCost(cost, null, 0, gasUsageCoefficients);
   }
 
   /**
@@ -297,6 +307,33 @@ public abstract class AbstractCallOperation extends AbstractOperation {
         recipient,
         to,
         accountIsWarm);
+  }
+
+  public int[][] gasUsageCoefficients(final MessageFrame frame, final boolean accountIsWarm) {
+    final long inputDataOffset = inputDataOffset(frame);
+    final long inputDataLength = inputDataLength(frame);
+    final long outputDataOffset = outputDataOffset(frame);
+    final long outputDataLength = outputDataLength(frame);
+    final long inputDataMemoryExpansion = frame.calculateMemoryExpansion(inputDataOffset, inputDataLength);
+    final long outputDataMemoryExpansion = frame.calculateMemoryExpansion(outputDataOffset, outputDataLength);
+    final long memoryExpansion = Math.max(inputDataMemoryExpansion, outputDataMemoryExpansion);
+
+    final Wei transferValue = value(frame);
+    final Account recipient = frame.getWorldUpdater().get(address(frame));
+    final int transferValueCoefficient =
+            recipient == null ?
+                    transferValue.isZero() ? GasUsageCoefficients.ZERO_TO_NON_EXISTENT_ACCOUNT_GAS_COST : GasUsageCoefficients.NON_ZERO_TO_NON_EXISTENT_ACCOUNT_GAS_COST :
+                    recipient.isEmpty() ?
+                            transferValue.isZero() ? GasUsageCoefficients.ZERO_TO_EMPTY_ACCOUNT_GAS_COST : GasUsageCoefficients.NON_ZERO_TO_EMPTY_ACCOUNT_GAS_COST :
+                            transferValue.isZero() ? GasUsageCoefficients.ZERO_TO_EXISTENT_ACCOUNT_GAS_COST : GasUsageCoefficients.NON_ZERO_TO_EXISTENT_ACCOUNT_GAS_COST;
+
+    return new int[][] {
+            {this.getOpcode(), 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (memoryExpansion - frame.memoryWordSize())},
+            {accountIsWarm ? GasUsageCoefficients.WARM_ACCOUNT_ACCESS_COST : GasUsageCoefficients.COLD_ACCOUNT_ACCESS_COST, 1},
+            {GasUsageCoefficients.CALL_VALUE_TRANSFER_GAS_COST, transferValue.isZero() ? 0 : 1},
+            {transferValueCoefficient, 1}
+    };
   }
 
   /**

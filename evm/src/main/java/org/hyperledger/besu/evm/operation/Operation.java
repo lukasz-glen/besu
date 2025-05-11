@@ -22,7 +22,7 @@ import org.hyperledger.besu.evm.frame.MessageFrame;
 public interface Operation {
 
   /** The Operation result. */
-  class OperationResult {
+  abstract class OperationResult {
     /** The Gas cost. */
     final long gasCost;
 
@@ -81,6 +81,89 @@ public interface Operation {
      */
     public int getPcIncrement() {
       return pcIncrement;
+    }
+
+    public abstract int[][] reportGasUsageCoefficients();
+  }
+
+  class OperationResultFixedCost extends OperationResult {
+    private final int[][] gasUsageCoefficients;
+
+    public OperationResultFixedCost(final long gasCost, final ExceptionalHaltReason haltReason, final int opcode) {
+      super(gasCost, haltReason, 1);
+      this.gasUsageCoefficients = new int[][]{{opcode, 1}};
+    }
+
+    /**
+     * Instantiates a new Operation result.
+     *
+     * @param gasCost the gas cost
+     * @param haltReason the halt reason
+     * @param pcIncrement the increment
+     */
+    public OperationResultFixedCost(
+            final long gasCost, final ExceptionalHaltReason haltReason, final int pcIncrement, final int opcode) {
+      super(gasCost, haltReason, pcIncrement);
+      this.gasUsageCoefficients = new int[][]{{opcode, 1}};
+    }
+
+    @Override
+    public int[][] reportGasUsageCoefficients() {
+      return this.gasUsageCoefficients;
+    }
+  }
+
+  class OperationResultWithCost extends OperationResult {
+    private final int[][] gasUsageCoefficients;
+
+    public OperationResultWithCost(final long gasCost, final ExceptionalHaltReason haltReason, final int[][] gasUsageCoefficients) {
+      super(gasCost, haltReason, 1);
+      this.gasUsageCoefficients = gasUsageCoefficients;
+    }
+
+    /**
+     * Instantiates a new Operation result.
+     *
+     * @param gasCost the gas cost
+     * @param haltReason the halt reason
+     * @param pcIncrement the increment
+     */
+    public OperationResultWithCost(
+            final long gasCost, final ExceptionalHaltReason haltReason, final int pcIncrement, final int[][] gasUsageCoefficients) {
+      super(gasCost, haltReason, pcIncrement);
+      this.gasUsageCoefficients = gasUsageCoefficients;
+    }
+
+    @Override
+    public int[][] reportGasUsageCoefficients() {
+      return this.gasUsageCoefficients;
+    }
+  }
+
+  class OperationResultRawCost extends OperationResult {
+    private final int[][] gasUsageCoefficients;
+
+    public OperationResultRawCost(final long gasCost, final ExceptionalHaltReason haltReason, final int opcode) {
+      super(gasCost, haltReason, 1);
+      this.gasUsageCoefficients = new int[][]{{opcode, (int) gasCost}};
+    }
+
+    /**
+     * Instantiates a new Operation result.
+     *
+     * @param gasCost the gas cost
+     * @param haltReason the halt reason
+     * @param pcIncrement the increment
+     */
+    public OperationResultRawCost(
+            final long gasCost, final ExceptionalHaltReason haltReason, final int pcIncrement, final int opcode) {
+      super(gasCost, haltReason, pcIncrement);
+      this.gasUsageCoefficients = new int[][]{{opcode, (int) gasCost}};
+    }
+
+    @Override
+    public int[][] reportGasUsageCoefficients() {
+      return this.gasUsageCoefficients;
     }
   }
 

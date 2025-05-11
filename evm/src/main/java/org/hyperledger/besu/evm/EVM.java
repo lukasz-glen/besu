@@ -79,11 +79,11 @@ public class EVM {
 
   /** The constant OVERFLOW_RESPONSE. */
   protected static final OperationResult OVERFLOW_RESPONSE =
-      new OperationResult(0L, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS);
+      new Operation.OperationResultFixedCost(0L, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, GasUsageCoefficients.TOO_MANY_STACK_ITEMS);
 
   /** The constant UNDERFLOW_RESPONSE. */
   protected static final OperationResult UNDERFLOW_RESPONSE =
-      new OperationResult(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+      new Operation.OperationResultFixedCost(0L, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, GasUsageCoefficients.TOO_MANY_STACK_ITEMS);
 
   private final OperationRegistry operations;
   private final GasCalculator gasCalculator;
@@ -209,6 +209,10 @@ public class EVM {
     var operationTracer = tracing == OperationTracer.NO_TRACING ? null : tracing;
     byte[] code = frame.getCode().getBytes().toArrayUnsafe();
     Operation[] operationArray = operations.getOperations();
+    GasUsageCoefficients gasUsageCoefficients = frame.getContextVariable("GAS_USAGE_COEFFICIENTS");
+    if (gasUsageCoefficients == null) {
+        throw new RuntimeException("gasUsageCoefficients is null"); // TODO nasty
+    }
     while (frame.getState() == MessageFrame.State.CODE_EXECUTING) {
       Operation currentOperation;
       int opcode;
@@ -337,6 +341,7 @@ public class EVM {
       } catch (final UnderflowException ue) {
         result = UNDERFLOW_RESPONSE;
       }
+      gasUsageCoefficients.addGasUsage(result.reportGasUsageCoefficients());
       final ExceptionalHaltReason haltReason = result.getHaltReason();
       if (haltReason != null) {
         LOG.trace("MessageFrame evaluation halted because of {}", haltReason);

@@ -34,7 +34,7 @@ public class VirtualOperation implements Operation {
   @Override
   public OperationResult execute(final MessageFrame frame, final EVM evm) {
     OperationResult result = delegate.execute(frame, evm);
-    return new OperationResult(result.getGasCost(), result.getHaltReason(), 0);
+    return new OperationResultWithCost(result.getGasCost(), result.getHaltReason(), 0, result.reportGasUsageCoefficients());
   }
 
   @Override

@@ -15,6 +15,7 @@
 package org.hyperledger.besu.evm.operation;
 
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -57,8 +58,14 @@ public class ExpOperation extends AbstractOperation {
     final int numBytes = (power.bitLength() + 7) / 8;
 
     final long cost = gasCalculator.expOperationGasCost(numBytes);
+    final int[][] gasUsageCoefficients = new int[][]{{0x0A, 1},{GasUsageCoefficients.EXP_OPERATION_BYTE_GAS_COST, numBytes}};
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS) {
+        @Override
+        public int[][] reportGasUsageCoefficients() {
+          return gasUsageCoefficients;
+        }
+      };
     }
 
     byte[] numberBytes = number.toArrayUnsafe();
@@ -75,6 +82,11 @@ public class ExpOperation extends AbstractOperation {
     } else {
       frame.pushStackItem(Bytes.wrap(resultArray));
     }
-    return new OperationResult(cost, null);
+    return new OperationResult(cost, null) {
+      @Override
+      public int[][] reportGasUsageCoefficients() {
+        return gasUsageCoefficients;
+      }
+    };
   }
 }

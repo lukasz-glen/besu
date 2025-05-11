@@ -29,10 +29,10 @@ public class CallFOperation extends AbstractOperation {
   public static final int OPCODE = 0xe3;
 
   /** The Call F success. */
-  static final OperationResult callfSuccess = new OperationResult(5, null);
+  static final OperationResult callfSuccess = new OperationResultFixedCost(5, null, OPCODE);
 
   static final OperationResult callfStackOverflow =
-      new OperationResult(5, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS);
+      new OperationResultFixedCost(5, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, OPCODE);
 
   /**
    * Instantiates a new Call F operation.

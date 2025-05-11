@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm.operation;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
@@ -67,12 +68,16 @@ public class SelfDestructOperation extends AbstractOperation {
     final long cost =
         gasCalculator().selfDestructOperationGasCost(beneficiaryNullable, originatorBalance)
             + (beneficiaryIsWarm ? 0L : gasCalculator().getColdAccountAccessCost());
+    // TODO 0xFF gas coefficients too complex
+    final int[][] gasUsageCoefficients = beneficiaryIsWarm ?
+            new int[][]{{0xFF, (int) cost}} :
+            new int[][]{{0xFF, (int) (cost - gasCalculator().getColdAccountAccessCost())}, {GasUsageCoefficients.COLD_ACCOUNT_ACCESS_COST, 1}};
 
     // With the cost we can test for two early WithdrawalRequests: static or not enough gas.
     if (frame.isStatic()) {
-      return new OperationResult(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, gasUsageCoefficients);
     } else if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     // We passed preliminary checks, get mutable accounts.
@@ -97,6 +102,6 @@ public class SelfDestructOperation extends AbstractOperation {
     // Set frame to CODE_SUCCESS so that the frame performs a normal halt.
     frame.setState(MessageFrame.State.CODE_SUCCESS);
 
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

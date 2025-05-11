@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class GtOperation extends AbstractFixedCostOperation {
 
   /** The GT operation success result. */
-  static final OperationResult gtSuccess = new OperationResult(3, null);
+  static final OperationResult gtSuccess = new OperationResultFixedCost(3, null, 0x11);
 
   /**
    * Instantiates a new GT operation.

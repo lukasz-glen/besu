@@ -16,6 +16,7 @@ package org.hyperledger.besu.evm.operation;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
@@ -37,7 +38,7 @@ public class SStoreOperation extends AbstractOperation {
 
   /** The constant ILLEGAL_STATE_CHANGE. */
   protected static final OperationResult ILLEGAL_STATE_CHANGE =
-      new OperationResult(0L, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      new OperationResultRawCost(0L, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, 0x55);
 
   private final long minimumGasRemaining;
 
@@ -85,11 +86,20 @@ public class SStoreOperation extends AbstractOperation {
 
     final long remainingGas = frame.getRemainingGas();
     if (frame.isStatic()) {
-      return new OperationResult(remainingGas, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultWithCost(remainingGas, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, new int[][]{
+              {0x55, (int) remainingGas},
+              {slotIsWarm ? GasUsageCoefficients.WARM_STORAGE_ACCESS_COST : GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+      });
     } else if (remainingGas < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, new int[][]{
+              {0x55, (int) cost},
+              {slotIsWarm ? GasUsageCoefficients.WARM_STORAGE_ACCESS_COST : GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+      });
     } else if (remainingGas <= minimumGasRemaining) {
-      return new OperationResult(minimumGasRemaining, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(minimumGasRemaining, ExceptionalHaltReason.INSUFFICIENT_GAS, new int[][]{
+              {0x55, (int) minimumGasRemaining},
+              {slotIsWarm ? GasUsageCoefficients.WARM_STORAGE_ACCESS_COST : GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+      });
     }
 
     // Increment the refund counter.
@@ -99,6 +109,9 @@ public class SStoreOperation extends AbstractOperation {
 
     account.setStorageValue(key, newValue);
     frame.storageWasUpdated(key, newValue);
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, new int[][]{
+            {0x55, (int) cost},
+            {slotIsWarm ? GasUsageCoefficients.WARM_STORAGE_ACCESS_COST : GasUsageCoefficients.COLD_STORAGE_ACCESS_COST, 1}
+    });
   }
 }

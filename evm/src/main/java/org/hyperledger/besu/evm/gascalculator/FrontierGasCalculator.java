@@ -188,7 +188,7 @@ public class FrontierGasCalculator implements GasCalculator {
    * @param payload the payload
    * @return the number of zero bytes in the payload
    */
-  protected static long zeroBytes(final Bytes payload) {
+  public static long zeroBytes(final Bytes payload) {
     int zeros = 0;
     for (int i = 0; i < payload.size(); i++) {
       if (payload.get(i) == 0) {

@@ -19,6 +19,7 @@ import org.hyperledger.besu.crypto.SECPPublicKey;
 import org.hyperledger.besu.crypto.SECPSignature;
 import org.hyperledger.besu.crypto.SignatureAlgorithm;
 import org.hyperledger.besu.crypto.SignatureAlgorithmFactory;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
@@ -61,6 +62,11 @@ public class ECRECPrecompiledContract extends AbstractPrecompiledContract {
   @Override
   public long gasRequirement(final Bytes input) {
     return gasCalculator().getEcrecPrecompiledContractGasCost();
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{{GasUsageCoefficients.PRECOMPILED_ECREC, (int) gasRequirement(input)}};
   }
 
   @Nonnull

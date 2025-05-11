@@ -20,6 +20,7 @@ import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.Code;
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
@@ -30,6 +31,8 @@ import org.hyperledger.besu.evm.worldstate.CodeDelegationGasCostHelper;
 import javax.annotation.Nonnull;
 
 import org.apache.tuweni.bytes.Bytes;
+
+import java.util.Map;
 
 /**
  * A skeleton class for implementing call operations.
@@ -110,17 +113,17 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
 
     GasCalculator gasCalculator = gasCalculator();
     if (!zeroValue && isStatic(frame)) {
-      return new OperationResult(
-          gasCalculator.callValueTransferGasCost(), ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultRawCost(
+          gasCalculator.callValueTransferGasCost(), ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, this.getOpcode());
     }
     if (toBytes.size() > Address.SIZE) {
-      return new OperationResult(
+      return new OperationResultRawCost(
           clampedAdd(
               clampedAdd(
                   gasCalculator.memoryExpansionGasCost(frame, inputOffset, inputLength),
                   (zeroValue ? 0 : gasCalculator.callValueTransferGasCost())),
               gasCalculator.getColdAccountAccessCost()),
-          ExceptionalHaltReason.ADDRESS_OUT_OF_RANGE);
+          ExceptionalHaltReason.ADDRESS_OUT_OF_RANGE, this.getOpcode());
     }
     Address to = Words.toAddress(toBytes);
     final Account contract = frame.getWorldUpdater().get(to);
@@ -138,8 +141,8 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
           CodeDelegationGasCostHelper.codeDelegationGasCost(frame, gasCalculator(), contract);
 
       if (frame.getRemainingGas() < codeDelegationResolutionGas) {
-        return new Operation.OperationResult(
-            codeDelegationResolutionGas, ExceptionalHaltReason.INSUFFICIENT_GAS);
+        return new Operation.OperationResultRawCost(
+            codeDelegationResolutionGas, ExceptionalHaltReason.INSUFFICIENT_GAS, this.getOpcode());
       }
 
       frame.decrementRemainingGas(codeDelegationResolutionGas);
@@ -158,7 +161,7 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
             (accountCreation ? gasCalculator.newAccountGasCost() : 0));
     long currentGas = frame.getRemainingGas();
     if (currentGas < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultRawCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, this.getOpcode());
     }
     currentGas -= cost;
     frame.expandMemory(inputOffset, inputLength);
@@ -167,7 +170,7 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
 
     // invalid code results in a quick exit
     if (!code.isValid()) {
-      return new OperationResult(cost, ExceptionalHaltReason.INVALID_CODE, 0);
+      return new OperationResultRawCost(cost, ExceptionalHaltReason.INVALID_CODE, 0, this.getOpcode());
     }
 
     // last exceptional failure, prepare for call or soft failures
@@ -200,6 +203,11 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
     // all checks passed, do the call
     final Bytes inputData = frame.readMutableMemory(inputOffset, inputLength);
 
+    Map<String, Object> contextVariables =
+            frame.hasContextVariable("GAS_USAGE_COEFFICIENTS") ?
+                    Map.of("GAS_USAGE_COEFFICIENTS", ((GasUsageCoefficients) frame.getContextVariable("GAS_USAGE_COEFFICIENTS")).spawnChild()) :
+                    Map.of();
+
     MessageFrame.builder()
         .parentMessageFrame(frame)
         .type(MessageFrame.Type.MESSAGE_CALL)
@@ -213,16 +221,17 @@ public abstract class AbstractExtCallOperation extends AbstractCallOperation {
         .code(code)
         .isStatic(isStatic(frame))
         .completer(child -> complete(frame, child))
+        .contextVariables(contextVariables)
         .build();
 
     frame.setState(MessageFrame.State.CODE_SUSPENDED);
-    return new OperationResult(clampedAdd(cost, childGas), null, 0);
+    return new OperationResultRawCost(clampedAdd(cost, childGas), null, 0, this.getOpcode());
   }
 
   private @Nonnull OperationResult softFailure(final MessageFrame frame, final long cost) {
     frame.popStackItems(getStackItemsConsumed());
     frame.pushStackItem(EOF1_EXCEPTION_STACK_ITEM);
-    return new OperationResult(cost, null);
+    return new OperationResultRawCost(cost, null, this.getOpcode());
   }
 
   @Override

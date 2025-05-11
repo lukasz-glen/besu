@@ -27,7 +27,7 @@ public class InvalidOperation extends AbstractOperation {
 
   /** The constant INVALID_RESULT. */
   public static final OperationResult INVALID_RESULT =
-      new OperationResult(0, ExceptionalHaltReason.INVALID_OPERATION);
+      new OperationResultFixedCost(0, ExceptionalHaltReason.INVALID_OPERATION, OPCODE);
 
   /**
    * Instantiates a new Invalid operation.
@@ -60,6 +60,6 @@ public class InvalidOperation extends AbstractOperation {
    * @return an {@link OperationResult} with zero gas cost and a description of the invalid opcode
    */
   public static OperationResult invalidOperationResult(final int opcode) {
-    return new OperationResult(0, ExceptionalHaltReason.newInvalidOperation(opcode));
+    return new OperationResultFixedCost(0, ExceptionalHaltReason.newInvalidOperation(opcode), opcode);
   }
 }

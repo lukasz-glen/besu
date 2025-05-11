@@ -307,6 +307,9 @@ public abstract class DiffBasedWorldStateProvider implements WorldStateArchive {
           // need to throw to trigger the heal
           throw re;
         } catch (final Exception e) {
+          System.out.println(e);
+          System.out.println(e.getMessage());
+          e.printStackTrace(System.out);
           // if we fail we must clean up the updater
           diffBasedUpdater.reset();
           LOG.atDebug()

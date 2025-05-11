@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm.operation;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -28,11 +29,11 @@ public class ReturnDataCopyOperation extends AbstractOperation {
 
   /** The constant INVALID_RETURN_DATA_BUFFER_ACCESS. */
   protected static final OperationResult INVALID_RETURN_DATA_BUFFER_ACCESS =
-      new OperationResult(0L, ExceptionalHaltReason.INVALID_RETURN_DATA_BUFFER_ACCESS);
+      new OperationResultFixedCost(0L, ExceptionalHaltReason.INVALID_RETURN_DATA_BUFFER_ACCESS, GasUsageCoefficients.INVALID_RETURN_DATA_BUFFER_ACCESS);
 
   /** The constant OUT_OF_BOUNDS. */
   protected static final OperationResult OUT_OF_BOUNDS =
-      new OperationResult(0L, ExceptionalHaltReason.OUT_OF_BOUNDS);
+      new OperationResultFixedCost(0L, ExceptionalHaltReason.OUT_OF_BOUNDS, GasUsageCoefficients.OUT_OF_BOUNDS);
 
   /**
    * Instantiates a new Return data copy operation.
@@ -63,12 +64,17 @@ public class ReturnDataCopyOperation extends AbstractOperation {
     }
 
     final long cost = gasCalculator().dataCopyOperationGasCost(frame, memOffset, numBytes);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0x3E, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(memOffset, numBytes) - frame.memoryWordSize())},
+            {GasUsageCoefficients.COPY_WORD_GAS_COST, (int) ((numBytes + 31) / 32)}
+    };
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultWithCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, gasUsageCoefficients);
     }
 
     frame.writeMemory(memOffset, sourceOffset, numBytes, returnData, true);
 
-    return new OperationResult(cost, null);
+    return new OperationResultWithCost(cost, null, gasUsageCoefficients);
   }
 }

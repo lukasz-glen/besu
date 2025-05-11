@@ -20,6 +20,7 @@ import org.hyperledger.besu.crypto.altbn128.AltBn128Point;
 import org.hyperledger.besu.crypto.altbn128.Fq;
 import org.hyperledger.besu.crypto.altbn128.Fq12;
 import org.hyperledger.besu.crypto.altbn128.Fq2;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -86,6 +87,14 @@ public class AltBN128PairingPrecompiledContract extends AbstractAltBnPrecompiled
   public long gasRequirement(final Bytes input) {
     final int parameters = input.size() / PARAMETER_LENGTH;
     return (pairingGasCost * parameters) + baseGasCost;
+  }
+
+  @Override
+  public int[][] gasUsageCoefficients(final Bytes input) {
+    return new int[][]{
+            {GasUsageCoefficients.PRECOMPILED_EC_PAIRING_BASE, 1},
+            {GasUsageCoefficients.PRECOMPILED_EC_PAIRING_PARAMETERS, input.size() / PARAMETER_LENGTH}
+    };
   }
 
   @Nonnull

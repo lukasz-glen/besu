@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm.operation;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
 
 import org.hyperledger.besu.evm.EVM;
+import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -41,11 +42,25 @@ public class MStoreOperation extends AbstractOperation {
     final Bytes value = frame.popStackItem();
 
     final long cost = gasCalculator().mStoreOperationGasCost(frame, location);
+    final int[][] gasUsageCoefficients = new int[][]{
+            {0x52, 1},
+            {GasUsageCoefficients.MEMORY_WORD_GAS_COST, (int) (frame.calculateMemoryExpansion(location, 32) - frame.memoryWordSize())}
+    };
     if (frame.getRemainingGas() < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS) {
+        @Override
+        public int[][] reportGasUsageCoefficients() {
+          return gasUsageCoefficients;
+        }
+      };
     }
 
     frame.writeMemoryRightAligned(location, 32, value, true);
-    return new OperationResult(cost, null);
+    return new OperationResult(cost, null) {
+      @Override
+      public int[][] reportGasUsageCoefficients() {
+        return gasUsageCoefficients;
+      }
+    };
   }
 }

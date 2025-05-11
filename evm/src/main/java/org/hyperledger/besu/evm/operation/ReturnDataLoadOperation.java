@@ -57,6 +57,6 @@ public class ReturnDataLoadOperation extends AbstractOperation {
     }
 
     frame.pushStackItem(value);
-    return new OperationResult(3L, null);
+    return new OperationResultFixedCost(3L, null, 0xf7);
   }
 }

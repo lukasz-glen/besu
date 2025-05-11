@@ -42,12 +42,12 @@ public class TStoreOperation extends AbstractOperation {
 
     final long remainingGas = frame.getRemainingGas();
     if (frame.isStatic()) {
-      return new OperationResult(remainingGas, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE);
+      return new OperationResultFixedCost(remainingGas, ExceptionalHaltReason.ILLEGAL_STATE_CHANGE, 0x5D);
     } else if (remainingGas < cost) {
-      return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);
+      return new OperationResultFixedCost(cost, ExceptionalHaltReason.INSUFFICIENT_GAS, 0x5D);
     } else {
       frame.setTransientStorageValue(frame.getRecipientAddress(), key, value);
-      return new OperationResult(cost, null);
+      return new OperationResultFixedCost(cost, null, 0x5D);
     }
   }
 }

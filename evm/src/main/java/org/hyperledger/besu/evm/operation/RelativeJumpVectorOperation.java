@@ -57,12 +57,13 @@ public class RelativeJumpVectorOperation extends AbstractFixedCostOperation {
             ? code.readBigEndianI16(
                 frame.getPC() + 2 + offsetCase * 2) // lookup delta if offset is in vector
             : 0; // if offsetCase is outside the vector the jump delta is zero / next opcode.
-    return new OperationResult(
+    return new OperationResultFixedCost(
         gasCost,
         null,
         2 // Opcode + length immediate
             + 2 * vectorSize // vector size
-            + jumpDelta);
+            + jumpDelta,
+        OPCODE);
   }
 
   /**

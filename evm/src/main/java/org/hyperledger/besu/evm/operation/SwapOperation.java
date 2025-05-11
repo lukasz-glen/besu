@@ -21,6 +21,8 @@ import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
 import org.apache.tuweni.bytes.Bytes;
 
+import java.util.stream.IntStream;
+
 /** The Swap operation. */
 public class SwapOperation extends AbstractFixedCostOperation {
 
@@ -28,7 +30,9 @@ public class SwapOperation extends AbstractFixedCostOperation {
   public static final int SWAP_BASE = 0x8F;
 
   /** The Swap operation success result. */
-  static final OperationResult swapSuccess = new OperationResult(3, null);
+  static final OperationResult[] swapSuccess = IntStream.range(0, 17)
+          .mapToObj(i -> new OperationResultFixedCost(3, null, SWAP_BASE + i))
+          .toList().toArray(new OperationResult[17]);
 
   private final int index;
 
@@ -51,7 +55,7 @@ public class SwapOperation extends AbstractFixedCostOperation {
         gasCalculator.getVeryLowTierGasCost());
     this.index = index;
     this.underflowResponse =
-        new Operation.OperationResult(gasCost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS);
+        new Operation.OperationResultFixedCost(gasCost, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, SWAP_BASE + index);
   }
 
   @Override
@@ -72,6 +76,6 @@ public class SwapOperation extends AbstractFixedCostOperation {
     frame.setStackItem(0, frame.getStackItem(index));
     frame.setStackItem(index, tmp);
 
-    return swapSuccess;
+    return swapSuccess[index];
   }
 }

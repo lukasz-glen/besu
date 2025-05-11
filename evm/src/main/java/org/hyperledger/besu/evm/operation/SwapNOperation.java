@@ -28,7 +28,7 @@ public class SwapNOperation extends AbstractFixedCostOperation {
   public static final int OPCODE = 0xe7;
 
   /** The Swap operation success result. */
-  static final OperationResult swapSuccess = new OperationResult(3, null);
+  static final OperationResult swapSuccess = new OperationResultFixedCost(3, null, OPCODE);
 
   /**
    * Instantiates a new SwapN operation.

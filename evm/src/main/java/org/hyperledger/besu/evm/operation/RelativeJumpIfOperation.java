@@ -45,9 +45,9 @@ public class RelativeJumpIfOperation extends AbstractFixedCostOperation {
     final Bytes condition = frame.popStackItem();
     if (!condition.isZero()) {
       final int pcPostInstruction = frame.getPC() + 1;
-      return new OperationResult(gasCost, null, 2 + code.readBigEndianI16(pcPostInstruction) + 1);
+      return new OperationResultFixedCost(gasCost, null, 2 + code.readBigEndianI16(pcPostInstruction) + 1, OPCODE);
     } else {
-      return new OperationResult(gasCost, null, 2 + 1);
+      return new OperationResultFixedCost(gasCost, null, 2 + 1, OPCODE);
     }
   }
 }

@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class AndOperation extends AbstractFixedCostOperation {
 
   /** The And operation success result. */
-  static final OperationResult andSuccess = new OperationResult(3, null);
+  static final OperationResult andSuccess = new OperationResultFixedCost(3, null, 0x16);
 
   /**
    * Instantiates a new And operation.

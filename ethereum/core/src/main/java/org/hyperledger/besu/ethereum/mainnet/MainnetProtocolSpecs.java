@@ -68,6 +68,8 @@ import org.hyperledger.besu.evm.gascalculator.PragueGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.ShanghaiGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.SpuriousDragonGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.TangerineWhistleGasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculatorDispatcher;
+import org.hyperledger.besu.evm.gascalculator.Eip7904GasCalculator;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.evm.processor.ContractCreationProcessor;
 import org.hyperledger.besu.evm.processor.MessageCallProcessor;
@@ -700,8 +702,9 @@ public abstract class MainnetProtocolSpecs {
               cancunBlobSchedule.getBaseFeeUpdateFraction());
     }
 
+    final GasCalculatorDispatcher.BoolHolder isSimulation = new GasCalculatorDispatcher.BoolHolder();
     final java.util.function.Supplier<GasCalculator> cancunGasCalcSupplier =
-        () -> new CancunGasCalculator(cancunBlobSchedule.getTarget());
+        () -> new GasCalculatorDispatcher(new CancunGasCalculator(cancunBlobSchedule.getTarget()), new Eip7904GasCalculator(cancunBlobSchedule.getTarget()), isSimulation);
 
     return shanghaiDefinition(
             chainId,

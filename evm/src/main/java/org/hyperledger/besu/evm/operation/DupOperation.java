@@ -29,7 +29,7 @@ public class DupOperation extends AbstractFixedCostOperation {
 
   /** The Dup success operation result. */
   static final OperationResult[] dupSuccess = IntStream.range(0, 17)
-          .mapToObj(i -> new OperationResultFixedCost(3, null, DUP_BASE + i))
+          .mapToObj(i -> new OperationResultFixedCostWithSimulation(3, 1, null, DUP_BASE + i))
           .toList().toArray(new OperationResult[17]);
 
   /** The Underflow response. */

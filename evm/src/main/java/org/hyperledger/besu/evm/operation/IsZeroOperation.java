@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class IsZeroOperation extends AbstractFixedCostOperation {
 
   /** The Is zero operation success result. */
-  static final OperationResult isZeroSuccess = new OperationResultFixedCost(3, null, 0x15);
+  static final OperationResult isZeroSuccess = new OperationResultFixedCostWithSimulation(3, 1, null, 0x15);
 
   /**
    * Instantiates a new Is zero operation.

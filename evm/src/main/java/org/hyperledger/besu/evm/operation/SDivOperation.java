@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes32;
 /** The SDiv operation. */
 public class SDivOperation extends AbstractFixedCostOperation {
 
-  private static final OperationResult sdivSuccess = new OperationResultFixedCost(5, null, 0x05);
+  private static final OperationResult sdivSuccess = new OperationResultFixedCostWithSimulation(5, 1, null, 0x05);
 
   /**
    * Instantiates a new SDiv operation.

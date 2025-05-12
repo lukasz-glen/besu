@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class ByteOperation extends AbstractFixedCostOperation {
 
   /** The Byte operation success result. */
-  static final OperationResult byteSuccess = new OperationResultFixedCost(3, null, 0x1A);
+  static final OperationResult byteSuccess = new OperationResultFixedCostWithSimulation(3, 1, null, 0x1A);
 
   /**
    * Instantiates a new Byte operation.

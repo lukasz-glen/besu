@@ -25,6 +25,7 @@ import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.frame.MessageFrame.State;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculatorDispatcher;
 import org.hyperledger.besu.evm.internal.CodeCache;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.evm.internal.OverflowException;
@@ -32,7 +33,11 @@ import org.hyperledger.besu.evm.internal.UnderflowException;
 import org.hyperledger.besu.evm.operation.AddModOperation;
 import org.hyperledger.besu.evm.operation.AddOperation;
 import org.hyperledger.besu.evm.operation.AndOperation;
+import org.hyperledger.besu.evm.operation.EqOperation;
 import org.hyperledger.besu.evm.operation.ByteOperation;
+import org.hyperledger.besu.evm.operation.ShlOperation;
+import org.hyperledger.besu.evm.operation.ShrOperation;
+import org.hyperledger.besu.evm.operation.SarOperation;
 import org.hyperledger.besu.evm.operation.ChainIdOperation;
 import org.hyperledger.besu.evm.operation.DivOperation;
 import org.hyperledger.besu.evm.operation.DupOperation;
@@ -213,6 +218,7 @@ public class EVM {
     if (gasUsageCoefficients == null) {
         throw new RuntimeException("gasUsageCoefficients is null"); // TODO nasty
     }
+    boolean isSimulation = gasCalculator.isSimulation();
     while (frame.getState() == MessageFrame.State.CODE_EXECUTING) {
       Operation currentOperation;
       int opcode;
@@ -250,12 +256,16 @@ public class EVM {
               case 0x11 -> GtOperation.staticOperation(frame);
               case 0x12 -> SLtOperation.staticOperation(frame);
               case 0x13 -> SGtOperation.staticOperation(frame);
+              case 0x14 -> EqOperation.staticOperation(frame);
               case 0x15 -> IsZeroOperation.staticOperation(frame);
               case 0x16 -> AndOperation.staticOperation(frame);
               case 0x17 -> OrOperation.staticOperation(frame);
               case 0x18 -> XorOperation.staticOperation(frame);
               case 0x19 -> NotOperation.staticOperation(frame);
               case 0x1a -> ByteOperation.staticOperation(frame);
+              case 0x1b -> ShlOperation.staticOperation(frame);
+              case 0x1c -> ShrOperation.staticOperation(frame);
+              case 0x1d -> SarOperation.staticOperation(frame);
               case 0x50 -> PopOperation.staticOperation(frame);
               case 0x56 -> JumpOperation.staticOperation(frame);
               case 0x57 -> JumpiOperation.staticOperation(frame);
@@ -347,7 +357,7 @@ public class EVM {
         LOG.trace("MessageFrame evaluation halted because of {}", haltReason);
         frame.setExceptionalHaltReason(Optional.of(haltReason));
         frame.setState(State.EXCEPTIONAL_HALT);
-      } else if (frame.decrementRemainingGas(result.getGasCost()) < 0) {
+      } else if (frame.decrementRemainingGas(result.getGasCost(isSimulation)) < 0) {
         frame.setExceptionalHaltReason(Optional.of(ExceptionalHaltReason.INSUFFICIENT_GAS));
         frame.setState(State.EXCEPTIONAL_HALT);
       }

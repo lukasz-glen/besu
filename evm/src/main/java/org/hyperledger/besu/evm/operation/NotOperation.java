@@ -25,7 +25,7 @@ import org.apache.tuweni.bytes.Bytes32;
 public class NotOperation extends AbstractFixedCostOperation {
 
   /** The Not operation success result. */
-  static final OperationResult notSuccess = new OperationResultFixedCost(3, null, 0x19);
+  static final OperationResult notSuccess = new OperationResultFixedCostWithSimulation(3, 1, null, 0x19);
 
   /**
    * Instantiates a new Not operation.

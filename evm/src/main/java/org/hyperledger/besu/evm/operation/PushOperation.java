@@ -35,7 +35,7 @@ public class PushOperation extends AbstractFixedCostOperation {
 
   /** The Push operation success result. */
   static final OperationResult[] pushSuccess = IntStream.range(0, 33)
-          .mapToObj(i -> new OperationResultFixedCost(3, null, PUSH_BASE + i))
+          .mapToObj(i -> new OperationResultFixedCostWithSimulation(3, 1, null, PUSH_BASE + i))
           .toList().toArray(new OperationResult[33]);
 
   /**

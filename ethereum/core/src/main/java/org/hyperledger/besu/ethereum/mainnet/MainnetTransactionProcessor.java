@@ -43,6 +43,7 @@ import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.FrontierGasCalculator;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculatorDispatcher;
 import org.hyperledger.besu.evm.processor.AbstractMessageProcessor;
 import org.hyperledger.besu.evm.processor.ContractCreationProcessor;
 import org.hyperledger.besu.evm.processor.MessageCallProcessor;
@@ -269,6 +270,9 @@ public class MainnetTransactionProcessor {
       final PrivateMetadataUpdater privateMetadataUpdater,
       final Wei blobGasPrice) {
     final EVMWorldUpdater evmWorldUpdater = new EVMWorldUpdater(worldState, gasCalculator);
+    if (gasCalculator.isSimulation()) {
+      throw new RuntimeException("GasCalculatorDispatcher: isSimulation is set to true before running a transaction");
+    }
     try {
       final var transactionValidator = transactionValidatorFactory.get();
       LOG.trace("Starting execution of {}", transaction);
@@ -500,11 +504,21 @@ public class MainnetTransactionProcessor {
       }
 
       if (initialFrame.getCode().isValid()) {
-        Deque<MessageFrame> messageFrameStackSimulation = initialFrameSimulation.getMessageFrameStack();
-        while (!messageFrameStackSimulation.isEmpty()) {
-          process(messageFrameStackSimulation.peekFirst(), OperationTracer.NO_TRACING);
+        if (gasCalculator.isSimulationEnabled()) {
+          if (gasCalculator.isSimulation()) {
+            throw new RuntimeException("GasCalculatorDispatcher: isSimulation is set to true before running the simulation");
+          } else {
+            gasCalculator.setSimulation(true);
+          }
+          Deque<MessageFrame> messageFrameStackSimulation = initialFrameSimulation.getMessageFrameStack();
+          while (!messageFrameStackSimulation.isEmpty()) {
+            process(messageFrameStackSimulation.peekFirst(), OperationTracer.NO_TRACING);
+          }
+          worldUpdaterSimulation.revert();
+          gasCalculator.setSimulation(false);
+        } else {
+          System.out.println("GasCalculatorDispatcher: not an instance");
         }
-        worldUpdaterSimulation.revert();
 
         Deque<MessageFrame> messageFrameStack = initialFrame.getMessageFrameStack();
         while (!messageFrameStack.isEmpty()) {

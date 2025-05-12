@@ -22,7 +22,7 @@ import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 public class PopOperation extends AbstractFixedCostOperation {
 
   /** The Pop operation success result. */
-  static final OperationResult popSuccess = new OperationResultFixedCost(2, null, 0x50);
+  static final OperationResult popSuccess = new OperationResultFixedCostWithSimulation(2, 1, null, 0x50);
 
   /**
    * Instantiates a new Pop operation.

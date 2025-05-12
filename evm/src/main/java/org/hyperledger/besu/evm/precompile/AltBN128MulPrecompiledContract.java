@@ -20,6 +20,7 @@ import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculatorDispatcher;
 import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
 
 import java.math.BigInteger;
@@ -73,6 +74,9 @@ public class AltBN128MulPrecompiledContract extends AbstractAltBnPrecompiledCont
 
   @Override
   public long gasRequirement(final Bytes input) {
+    if (this.gasCalculator().isSimulation()) {
+      return 2700L;
+    }
     return gasCost;
   }
 

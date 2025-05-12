@@ -18,6 +18,8 @@ import org.hyperledger.besu.crypto.Hash;
 import org.hyperledger.besu.evm.GasUsageCoefficients;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculatorDispatcher;
 import org.hyperledger.besu.evm.internal.Words;
 
 import java.nio.file.Path;
@@ -91,7 +93,14 @@ public class KZGPointEvalPrecompiledContract implements PrecompiledContract {
   }
 
   /** Default constructor. */
-  public KZGPointEvalPrecompiledContract() {}
+  public KZGPointEvalPrecompiledContract() {
+    this.gasCalculator = null;
+  }
+
+  private final GasCalculator gasCalculator;
+  public KZGPointEvalPrecompiledContract(final GasCalculator gasCalculator) {
+    this.gasCalculator = gasCalculator;
+  }
 
   @Override
   public String getName() {
@@ -100,6 +109,9 @@ public class KZGPointEvalPrecompiledContract implements PrecompiledContract {
 
   @Override
   public long gasRequirement(final Bytes input) {
+    if (gasCalculator != null && gasCalculator.isSimulation()) {
+      return 21000;
+    }
     // As defined in EIP-4844
     return 50000;
   }

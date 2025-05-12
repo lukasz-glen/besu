@@ -27,7 +27,7 @@ import org.apache.tuweni.bytes.Bytes32;
 /** The Mod operation. */
 public class ModOperation extends AbstractFixedCostOperation {
 
-  private static final OperationResult modSuccess = new OperationResultFixedCost(5, null, 0x06);
+  private static final OperationResult modSuccess = new OperationResultFixedCostWithSimulation(5, 1, null, 0x06);
 
   /**
    * Instantiates a new Mod operation.

@@ -26,7 +26,7 @@ import org.apache.tuweni.bytes.Bytes;
 /** The SMod operation. */
 public class SModOperation extends AbstractFixedCostOperation {
 
-  private static final OperationResult smodSuccess = new OperationResultFixedCost(5, null, 0x07);
+  private static final OperationResult smodSuccess = new OperationResultFixedCostWithSimulation(5, 1, null, 0x07);
 
   /**
    * Instantiates a new SMod operation.

@@ -31,7 +31,7 @@ public class SwapOperation extends AbstractFixedCostOperation {
 
   /** The Swap operation success result. */
   static final OperationResult[] swapSuccess = IntStream.range(0, 17)
-          .mapToObj(i -> new OperationResultFixedCost(3, null, SWAP_BASE + i))
+          .mapToObj(i -> new OperationResultFixedCostWithSimulation(3, 1, null, SWAP_BASE + i))
           .toList().toArray(new OperationResult[17]);
 
   private final int index;

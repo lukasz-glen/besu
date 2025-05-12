@@ -24,7 +24,7 @@ import org.apache.tuweni.bytes.Bytes;
 public class LtOperation extends AbstractFixedCostOperation {
 
   /** The LT operation success result. */
-  static final OperationResult ltSuccess = new OperationResultFixedCost(3, null, 0x10);
+  static final OperationResult ltSuccess = new OperationResultFixedCostWithSimulation(3, 1, null, 0x10);
 
   /**
    * Instantiates a new LT operation.

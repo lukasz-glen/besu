@@ -66,6 +66,15 @@ public interface Operation {
     }
 
     /**
+     * Gets gas cost.
+     *
+     * @return the gas cost
+     */
+    public long getGasCost(final boolean isSimulation) {
+      return gasCost;
+    }
+
+    /**
      * Gets halt reason.
      *
      * @return the halt reason
@@ -110,6 +119,41 @@ public interface Operation {
     @Override
     public int[][] reportGasUsageCoefficients() {
       return this.gasUsageCoefficients;
+    }
+  }
+
+  class OperationResultFixedCostWithSimulation extends OperationResult {
+    private final int[][] gasUsageCoefficients;
+    private final long gasCostSimulation;
+
+    public OperationResultFixedCostWithSimulation(final long gasCost, final long gasCostSimulation, final ExceptionalHaltReason haltReason, final int opcode) {
+      super(gasCost, haltReason, 1);
+      this.gasUsageCoefficients = new int[][]{{opcode, 1}};
+      this.gasCostSimulation = gasCostSimulation;
+    }
+
+    /**
+     * Instantiates a new Operation result.
+     *
+     * @param gasCost the gas cost
+     * @param haltReason the halt reason
+     * @param pcIncrement the increment
+     */
+    public OperationResultFixedCostWithSimulation(
+            final long gasCost, final long gasCostSimulation, final ExceptionalHaltReason haltReason, final int pcIncrement, final int opcode) {
+      super(gasCost, haltReason, pcIncrement);
+      this.gasUsageCoefficients = new int[][]{{opcode, 1}};
+      this.gasCostSimulation = gasCostSimulation;
+    }
+
+    @Override
+    public int[][] reportGasUsageCoefficients() {
+      return this.gasUsageCoefficients;
+    }
+
+    @Override
+    public long getGasCost(final boolean isSimulation) {
+      return isSimulation ? gasCostSimulation : gasCost;
     }
   }
 

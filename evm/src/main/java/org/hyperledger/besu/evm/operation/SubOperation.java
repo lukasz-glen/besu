@@ -27,7 +27,7 @@ import org.apache.tuweni.bytes.Bytes32;
 public class SubOperation extends AbstractFixedCostOperation {
 
   /** The Sub operation success result. */
-  static final OperationResult subSuccess = new OperationResultFixedCost(3, null, 0x03);
+  static final OperationResult subSuccess = new OperationResultFixedCostWithSimulation(3, 1,null, 0x03);
 
   /**
    * Instantiates a new Sub operation.

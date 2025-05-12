@@ -35,6 +35,7 @@ abstract class AbstractFixedCostOperation extends AbstractOperation {
 
   /** The Gas cost. */
   protected final long gasCost;
+  protected final long gasCostSimulation;
 
   /**
    * Instantiates a new Abstract fixed cost operation.
@@ -55,6 +56,7 @@ abstract class AbstractFixedCostOperation extends AbstractOperation {
       final long fixedCost) {
     super(opcode, name, stackItemsConsumed, stackItemsProduced, gasCalculator);
     gasCost = fixedCost;
+    gasCostSimulation = fixedCost;
     successResponse = new OperationResultFixedCost(gasCost, null, opcode);
     outOfGasResponse = new OperationResultFixedCost(gasCost, ExceptionalHaltReason.INSUFFICIENT_GAS, opcode);
     underflowResponse =
@@ -62,10 +64,38 @@ abstract class AbstractFixedCostOperation extends AbstractOperation {
     overflowResponse = new OperationResultFixedCost(gasCost, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, opcode);
   }
 
+  /**
+   * Instantiates a new Abstract fixed cost operation.
+   *
+   * @param opcode the opcode
+   * @param name the name
+   * @param stackItemsConsumed the stack items consumed
+   * @param stackItemsProduced the stack items produced
+   * @param gasCalculator the gas calculator
+   * @param fixedCost the fixed cost
+   */
+  protected AbstractFixedCostOperation(
+          final int opcode,
+          final String name,
+          final int stackItemsConsumed,
+          final int stackItemsProduced,
+          final GasCalculator gasCalculator,
+          final long fixedCost,
+          final long fixedCostSimulation) {
+    super(opcode, name, stackItemsConsumed, stackItemsProduced, gasCalculator);
+    gasCost = fixedCost;
+    gasCostSimulation = fixedCostSimulation;
+    successResponse = new OperationResultFixedCostWithSimulation(gasCost, gasCostSimulation, null, opcode);
+    outOfGasResponse = new OperationResultFixedCostWithSimulation(gasCost, gasCostSimulation, ExceptionalHaltReason.INSUFFICIENT_GAS, opcode);
+    underflowResponse =
+            new OperationResultFixedCostWithSimulation(gasCost, gasCostSimulation, ExceptionalHaltReason.INSUFFICIENT_STACK_ITEMS, opcode);
+    overflowResponse = new OperationResultFixedCostWithSimulation(gasCost, gasCostSimulation, ExceptionalHaltReason.TOO_MANY_STACK_ITEMS, opcode);
+  }
+
   @Override
   public final OperationResult execute(final MessageFrame frame, final EVM evm) {
     try {
-      if (frame.getRemainingGas() < gasCost) {
+      if (frame.getRemainingGas() < (evm.getGasCalculator().isSimulation() ? gasCostSimulation : gasCost)) {
         return outOfGasResponse;
       } else {
         return executeFixedCostOperation(frame, evm);

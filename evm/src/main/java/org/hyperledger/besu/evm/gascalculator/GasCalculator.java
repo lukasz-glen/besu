@@ -59,6 +59,18 @@ import org.apache.tuweni.units.bigints.UInt256;
  */
 public interface GasCalculator {
 
+  default boolean isSimulationEnabled() {
+    return false;
+  }
+
+  default boolean isSimulation() {
+    return false;
+  }
+
+  default void setSimulation(final boolean value) {
+    throw new RuntimeException("GasCalculator: cannot change the simulation");
+  }
+
   // Precompiled Contract Gas Calculations
 
   /**

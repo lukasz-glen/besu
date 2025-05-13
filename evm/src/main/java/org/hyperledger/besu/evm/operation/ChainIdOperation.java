@@ -36,7 +36,7 @@ public class ChainIdOperation extends AbstractFixedCostOperation {
    * @param chainId the chain id
    */
   public ChainIdOperation(final GasCalculator gasCalculator, final Bytes32 chainId) {
-    super(OPCODE, "CHAINID", 0, 1, gasCalculator, gasCalculator.getBaseTierGasCost());
+    super(OPCODE, "CHAINID", 0, 1, gasCalculator, gasCalculator.getBaseTierGasCost(), 1);
     this.chainId = chainId;
   }
 

@@ -28,7 +28,7 @@ public class PCOperation extends AbstractFixedCostOperation {
    * @param gasCalculator the gas calculator
    */
   public PCOperation(final GasCalculator gasCalculator) {
-    super(0x58, "PC", 0, 1, gasCalculator, gasCalculator.getBaseTierGasCost());
+    super(0x58, "PC", 0, 1, gasCalculator, gasCalculator.getBaseTierGasCost(), 1);
   }
 
   @Override

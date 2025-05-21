@@ -136,6 +136,7 @@ public interface MainnetPrecompiledContracts {
     populateForIstanbul(registry, gasCalculator);
 
     // EIP-4844 - shard blob transactions
+    KZGPointEvalPrecompiledContract.init();
     registry.put(Address.KZG_POINT_EVAL, new KZGPointEvalPrecompiledContract());
   }
 

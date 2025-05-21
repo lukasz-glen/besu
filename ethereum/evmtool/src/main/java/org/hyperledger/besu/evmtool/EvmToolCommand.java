@@ -256,8 +256,13 @@ public class EvmToolCommand implements Runnable {
 
   @Option(
       names = {"--repeat"},
-      description = "Number of times to repeat for benchmarking.")
+      description = "Number of times to repeat before benchmarking.")
   private final Integer repeat = 0;
+
+  @Option(
+      names = {"--samples"},
+      description = "Number of times to repeat for benchmarking.")
+  private final Integer samples = 1;
 
   @Option(
       names = {"-v", "--version"},
@@ -394,7 +399,8 @@ public class EvmToolCommand implements Runnable {
               .metricsSystemModule(new MetricsSystemModule())
               .build();
 
-      int remainingIters = this.repeat;
+      int samples = this.samples > 0 ? this.samples : 1;
+      int remainingIters = this.repeat + samples;
       final ProtocolSpec protocolSpec = component.getProtocolSpec();
       final Transaction tx =
           new Transaction.Builder()
@@ -445,11 +451,13 @@ public class EvmToolCommand implements Runnable {
 
       final Stopwatch stopwatch = Stopwatch.createUnstarted();
       long lastTime = 0;
-      do {
-        final boolean lastLoop = remainingIters == 0;
+      long totalTime = 0;
+      double totalSquaredTime = 0; // calculate std dev of sample times
+      while (remainingIters-- > 0) {
+        final boolean isSample = remainingIters < samples;
 
         final OperationTracer tracer = // You should have picked Mercy.
-            lastLoop && showJsonResults
+            isSample && showJsonResults
                 ? new StandardJsonTracer(
                     out, showMemory, !hideStack, showReturnData, showStorage, eip3155strict)
                 : OperationTracer.NO_TRACING;
@@ -538,7 +546,7 @@ public class EvmToolCommand implements Runnable {
             if (lastTime == 0) {
               lastTime = stopwatch.elapsed().toNanos();
             }
-            if (lastLoop) {
+            if (isSample) {
               messageFrame
                   .getExceptionalHaltReason()
                   .ifPresent(haltReason -> out.println(haltReason));
@@ -548,7 +556,11 @@ public class EvmToolCommand implements Runnable {
         }
         lastTime = stopwatch.elapsed().toNanos();
         stopwatch.reset();
-        if (lastLoop) {
+        if (isSample) {
+          totalTime += lastTime;
+          totalSquaredTime += lastTime * lastTime;
+        }
+        if (remainingIters == 0) {
           initialMessageFrame.getSelfDestructs().forEach(updater::deleteAccount);
           updater.clearAccountsThatAreEmpty();
           updater.commit();
@@ -562,7 +574,13 @@ public class EvmToolCommand implements Runnable {
               .put("pass", initialMessageFrame.getExceptionalHaltReason().isEmpty())
               .put("fork", protocolSpec.getName());
           if (!noTime) {
-            resultLine.put("timens", lastTime).put("time", lastTime / 1000);
+            resultLine.put("timens", totalTime / samples).put("time", totalTime / samples / 1000);
+            if (samples == 1) {
+              resultLine.put("std_dev_timens", 0);
+            } else {
+              double preStdDev = samples * totalSquaredTime - ((double) totalTime) * totalTime;
+              resultLine.put("std_dev_timens", Math.sqrt(preStdDev) / samples);
+            }
           }
           out.println(resultLine);
 
@@ -570,7 +588,7 @@ public class EvmToolCommand implements Runnable {
             dumpWorldState(worldState, out);
           }
         }
-      } while (remainingIters-- > 0);
+      }
 
     } catch (final IOException e) {
       System.err.println("Unable to create Genesis module");

@@ -26,10 +26,11 @@ import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.BlockchainSetupUtil;
 import org.hyperledger.besu.ethereum.eth.manager.EthContext;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManager;
+import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestBuilder;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestUtil;
 import org.hyperledger.besu.ethereum.eth.manager.EthScheduler;
 import org.hyperledger.besu.ethereum.eth.manager.RespondingEthPeer;
-import org.hyperledger.besu.ethereum.eth.messages.EthPV62;
+import org.hyperledger.besu.ethereum.eth.messages.EthProtocolMessages;
 import org.hyperledger.besu.ethereum.eth.messages.GetBlockHeadersMessage;
 import org.hyperledger.besu.ethereum.eth.sync.ChainDownloader;
 import org.hyperledger.besu.ethereum.eth.sync.SynchronizerConfiguration;
@@ -86,10 +87,11 @@ public class FastSyncChainDownloaderTest {
     protocolSchedule = localBlockchainSetup.getProtocolSchedule();
     protocolContext = localBlockchainSetup.getProtocolContext();
     ethProtocolManager =
-        EthProtocolManagerTestUtil.create(
-            protocolSchedule,
-            localBlockchain,
-            new EthScheduler(1, 1, 1, 1, new NoOpMetricsSystem()));
+        EthProtocolManagerTestBuilder.builder()
+            .setProtocolSchedule(protocolSchedule)
+            .setBlockchain(localBlockchain)
+            .setEthScheduler(new EthScheduler(1, 1, 1, 1, new NoOpMetricsSystem()))
+            .build();
 
     ethContext = ethProtocolManager.ethContext();
     syncState = new SyncState(protocolContext.getBlockchain(), ethContext.getEthPeers());
@@ -189,7 +191,7 @@ public class FastSyncChainDownloaderTest {
     final RespondingEthPeer.Responder shorterLimitedRangeResponder =
         RespondingEthPeer.targetedResponder(
             (cap, msg) -> {
-              if (msg.getCode() == EthPV62.GET_BLOCK_HEADERS) {
+              if (msg.getCode() == EthProtocolMessages.GET_BLOCK_HEADERS) {
                 final GetBlockHeadersMessage request = GetBlockHeadersMessage.readFrom(msg);
                 return request.skip() == 0
                     || (request.hash().equals(localBlockchain.getBlockHashByNumber(0)));

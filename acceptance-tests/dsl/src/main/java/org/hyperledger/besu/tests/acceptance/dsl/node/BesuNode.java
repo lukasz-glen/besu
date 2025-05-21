@@ -27,15 +27,16 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.InProcessRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.JsonRpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguration;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.ethereum.core.Util;
+import org.hyperledger.besu.ethereum.eth.sync.SynchronizerConfiguration;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
 import org.hyperledger.besu.ethereum.p2p.config.NetworkingConfiguration;
-import org.hyperledger.besu.ethereum.p2p.rlpx.connections.netty.TLSConfiguration;
 import org.hyperledger.besu.ethereum.permissioning.PermissioningConfiguration;
 import org.hyperledger.besu.ethereum.worldstate.DataStorageConfiguration;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
+import org.hyperledger.besu.plugin.services.storage.KeyValueStorageFactory;
 import org.hyperledger.besu.tests.acceptance.dsl.condition.Condition;
 import org.hyperledger.besu.tests.acceptance.dsl.node.configuration.NodeConfiguration;
 import org.hyperledger.besu.tests.acceptance.dsl.node.configuration.genesis.GenesisConfigurationProvider;
@@ -96,12 +97,11 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
   private final Properties portsProperties = new Properties();
   private final Boolean p2pEnabled;
   private final int p2pPort;
-  private final Optional<TLSConfiguration> tlsConfiguration;
   private final NetworkingConfiguration networkingConfiguration;
   private final boolean revertReasonEnabled;
 
   private final String name;
-  private MiningParameters miningParameters;
+  private MiningConfiguration miningConfiguration;
   private TransactionPoolConfiguration txPoolConfiguration;
   private final List<String> runCommand;
   private PrivacyParameters privacyParameters = PrivacyParameters.DEFAULT;
@@ -135,11 +135,13 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
   private Optional<Integer> exitCode = Optional.empty();
   private final boolean isStrictTxReplayProtectionEnabled;
   private final Map<String, String> environment;
+  private SynchronizerConfiguration synchronizerConfiguration;
+  private final Optional<KeyValueStorageFactory> storageFactory;
 
   public BesuNode(
       final String name,
       final Optional<Path> dataPath,
-      final MiningParameters miningParameters,
+      final MiningConfiguration miningConfiguration,
       final TransactionPoolConfiguration txPoolConfiguration,
       final JsonRpcConfiguration jsonRpcConfiguration,
       final Optional<JsonRpcConfiguration> engineRpcConfiguration,
@@ -156,7 +158,6 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
       final GenesisConfigurationProvider genesisConfigProvider,
       final boolean p2pEnabled,
       final int p2pPort,
-      final Optional<TLSConfiguration> tlsConfiguration,
       final NetworkingConfiguration networkingConfiguration,
       final boolean discoveryEnabled,
       final boolean bootnodeEligible,
@@ -172,7 +173,8 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
       final List<String> runCommand,
       final Optional<KeyPair> keyPair,
       final boolean isStrictTxReplayProtectionEnabled,
-      final Map<String, String> environment)
+      final Map<String, String> environment,
+      final Optional<KeyValueStorageFactory> maybeStorageFactory)
       throws IOException {
     this.homeDirectory = dataPath.orElseGet(BesuNode::createTmpDataDirectory);
     this.isStrictTxReplayProtectionEnabled = isStrictTxReplayProtectionEnabled;
@@ -191,7 +193,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
         },
         () -> this.keyPair = KeyPairUtil.loadKeyPair(homeDirectory));
     this.name = name;
-    this.miningParameters = miningParameters;
+    this.miningConfiguration = miningConfiguration;
     this.txPoolConfiguration = txPoolConfiguration;
     this.jsonRpcConfiguration = jsonRpcConfiguration;
     this.engineRpcConfiguration = engineRpcConfiguration;
@@ -207,7 +209,6 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     this.network = network;
     this.p2pEnabled = p2pEnabled;
     this.p2pPort = p2pPort;
-    this.tlsConfiguration = tlsConfiguration;
     this.networkingConfiguration = networkingConfiguration;
     this.discoveryEnabled = discoveryEnabled;
     this.bootnodeEligible = bootnodeEligible;
@@ -215,6 +216,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     this.secp256k1Native = secp256k1Native;
     this.altbn128Native = altbn128Native;
     this.runCommand = runCommand;
+    this.storageFactory = maybeStorageFactory;
     plugins.forEach(
         pluginName -> {
           try {
@@ -234,6 +236,7 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     this.isDnsEnabled = isDnsEnabled;
     privacyParameters.ifPresent(this::setPrivacyParameters);
     this.environment = environment;
+    this.synchronizerConfiguration = SynchronizerConfiguration.builder().build(); // Default config
     LOG.info("Created BesuNode {}", this);
   }
 
@@ -659,10 +662,6 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     return p2pEnabled;
   }
 
-  public Optional<TLSConfiguration> getTLSConfiguration() {
-    return tlsConfiguration;
-  }
-
   public NetworkingConfiguration getNetworkingConfiguration() {
     return networkingConfiguration;
   }
@@ -678,12 +677,12 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
     this.bootnodes.addAll(bootnodes);
   }
 
-  public MiningParameters getMiningParameters() {
-    return miningParameters;
+  public MiningConfiguration getMiningParameters() {
+    return miningConfiguration;
   }
 
-  public void setMiningParameters(final MiningParameters miningParameters) {
-    this.miningParameters = miningParameters;
+  public void setMiningParameters(final MiningConfiguration miningConfiguration) {
+    this.miningConfiguration = miningConfiguration;
   }
 
   public TransactionPoolConfiguration getTransactionPoolConfiguration() {
@@ -794,6 +793,20 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
       nodeRequests.shutdown();
       nodeRequests = null;
     }
+    deleteRuntimeFiles();
+  }
+
+  private void deleteRuntimeFiles() {
+    try {
+      Files.deleteIfExists(homeDirectory.resolve("besu.networks"));
+    } catch (IOException e) {
+      LOG.error("Failed to clean up besu.networks file in {}", homeDirectory, e);
+    }
+    try {
+      Files.deleteIfExists(homeDirectory.resolve("besu.ports"));
+    } catch (IOException e) {
+      LOG.error("Failed to clean up besu.ports file in {}", homeDirectory, e);
+    }
   }
 
   @Override
@@ -843,5 +856,18 @@ public class BesuNode implements NodeConfiguration, RunnableNode, AutoCloseable 
 
   public ApiConfiguration getApiConfiguration() {
     return apiConfiguration;
+  }
+
+  public SynchronizerConfiguration getSynchronizerConfiguration() {
+    return synchronizerConfiguration;
+  }
+
+  public BesuNode setSynchronizerConfiguration(final SynchronizerConfiguration config) {
+    this.synchronizerConfiguration = config;
+    return this;
+  }
+
+  public Optional<KeyValueStorageFactory> getStorageFactory() {
+    return storageFactory;
   }
 }

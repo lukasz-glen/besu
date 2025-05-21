@@ -1,5 +1,5 @@
 /*
- * Copyright ConsenSys AG.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -21,8 +21,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import org.hyperledger.besu.config.StubGenesisConfigOptions;
+import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.api.ApiConfiguration;
+import org.hyperledger.besu.ethereum.api.ImmutableApiConfiguration;
 import org.hyperledger.besu.ethereum.api.graphql.GraphQLConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.health.HealthService;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.filter.FilterIdGenerator;
@@ -35,17 +37,19 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.websocket.WebSocketConfiguratio
 import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.blockcreation.PoWMiningCoordinator;
 import org.hyperledger.besu.ethereum.core.BlockchainSetupUtil;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.eth.EthProtocol;
 import org.hyperledger.besu.ethereum.eth.manager.EthPeers;
+import org.hyperledger.besu.ethereum.eth.manager.EthScheduler;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPool;
 import org.hyperledger.besu.ethereum.mainnet.ValidationResult;
 import org.hyperledger.besu.ethereum.p2p.network.P2PNetwork;
 import org.hyperledger.besu.ethereum.p2p.rlpx.wire.Capability;
 import org.hyperledger.besu.ethereum.transaction.TransactionInvalidReason;
+import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
 import org.hyperledger.besu.nat.NatService;
@@ -131,14 +135,19 @@ public abstract class AbstractJsonRpcHttpServiceTest {
     return emptySetupUtil;
   }
 
+  protected ApiConfiguration createApiConfiguration() {
+    return ImmutableApiConfiguration.builder().gasCap(0L).build();
+  }
+
   protected Map<String, JsonRpcMethod> getRpcMethods(
       final JsonRpcConfiguration config, final BlockchainSetupUtil blockchainSetupUtil) {
     final ProtocolContext protocolContext = mock(ProtocolContext.class);
     final Synchronizer synchronizerMock = mock(Synchronizer.class);
     final P2PNetwork peerDiscoveryMock = mock(P2PNetwork.class);
     final TransactionPool transactionPoolMock = mock(TransactionPool.class);
-    final MiningParameters miningParameters = mock(MiningParameters.class);
+    final MiningConfiguration miningConfiguration = mock(MiningConfiguration.class);
     final PoWMiningCoordinator miningCoordinatorMock = mock(PoWMiningCoordinator.class);
+    final ApiConfiguration apiConfiguration = createApiConfiguration();
     when(transactionPoolMock.addTransactionViaApi(any(Transaction.class)))
         .thenReturn(ValidationResult.valid());
     // nonce too low tests uses a tx with nonce=16
@@ -146,12 +155,14 @@ public abstract class AbstractJsonRpcHttpServiceTest {
         .thenReturn(ValidationResult.invalid(TransactionInvalidReason.NONCE_TOO_LOW));
     final PrivacyParameters privacyParameters = mock(PrivacyParameters.class);
 
+    when(miningConfiguration.getCoinbase()).thenReturn(Optional.of(Address.ZERO));
+
     final BlockchainQueries blockchainQueries =
         new BlockchainQueries(
             blockchainSetupUtil.getProtocolSchedule(),
             blockchainSetupUtil.getBlockchain(),
             blockchainSetupUtil.getWorldArchive(),
-            miningParameters);
+            miningConfiguration);
     final FilterIdGenerator filterIdGenerator = mock(FilterIdGenerator.class);
     final FilterRepository filterRepository = new FilterRepository();
     when(filterIdGenerator.nextId()).thenReturn("0x1");
@@ -164,10 +175,17 @@ public abstract class AbstractJsonRpcHttpServiceTest {
             .build();
 
     final Set<Capability> supportedCapabilities = new HashSet<>();
-    supportedCapabilities.add(EthProtocol.ETH62);
-    supportedCapabilities.add(EthProtocol.ETH63);
+    supportedCapabilities.add(EthProtocol.LATEST);
 
     final NatService natService = new NatService(Optional.empty());
+
+    final var transactionSimulator =
+        new TransactionSimulator(
+            blockchainSetupUtil.getBlockchain(),
+            blockchainSetupUtil.getWorldArchive(),
+            blockchainSetupUtil.getProtocolSchedule(),
+            miningConfiguration,
+            apiConfiguration.getGasCap());
 
     return new JsonRpcMethodsFactory()
         .methods(
@@ -183,7 +201,7 @@ public abstract class AbstractJsonRpcHttpServiceTest {
             protocolContext,
             filterManager,
             transactionPoolMock,
-            miningParameters,
+            miningConfiguration,
             miningCoordinatorMock,
             new NoOpMetricsSystem(),
             supportedCapabilities,
@@ -200,8 +218,10 @@ public abstract class AbstractJsonRpcHttpServiceTest {
             folder,
             mock(EthPeers.class),
             syncVertx,
-            mock(ApiConfiguration.class),
-            Optional.empty());
+            ImmutableApiConfiguration.builder().build(),
+            Optional.empty(),
+            transactionSimulator,
+            new EthScheduler(1, 1, 1, new NoOpMetricsSystem()));
   }
 
   protected void startService() throws Exception {

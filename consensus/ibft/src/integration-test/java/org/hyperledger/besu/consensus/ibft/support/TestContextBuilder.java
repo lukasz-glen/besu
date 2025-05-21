@@ -43,6 +43,7 @@ import org.hyperledger.besu.consensus.common.bft.RoundTimer;
 import org.hyperledger.besu.consensus.common.bft.SynchronizerUpdater;
 import org.hyperledger.besu.consensus.common.bft.UniqueMessageMulticaster;
 import org.hyperledger.besu.consensus.common.bft.blockcreation.BftBlockCreatorFactory;
+import org.hyperledger.besu.consensus.common.bft.blockcreation.BftProposerSelector;
 import org.hyperledger.besu.consensus.common.bft.blockcreation.ProposerSelector;
 import org.hyperledger.besu.consensus.common.bft.inttest.DefaultValidatorPeer;
 import org.hyperledger.besu.consensus.common.bft.inttest.NetworkLayout;
@@ -78,9 +79,9 @@ import org.hyperledger.besu.ethereum.core.BlockBody;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
 import org.hyperledger.besu.ethereum.core.Difficulty;
-import org.hyperledger.besu.ethereum.core.ImmutableMiningParameters;
-import org.hyperledger.besu.ethereum.core.ImmutableMiningParameters.MutableInitValues;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration.MutableInitValues;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.Util;
 import org.hyperledger.besu.ethereum.eth.manager.EthContext;
 import org.hyperledger.besu.ethereum.eth.manager.EthScheduler;
@@ -310,8 +311,8 @@ public class TestContextBuilder {
 
     final WorldStateArchive worldStateArchive = createInMemoryWorldStateArchive();
 
-    final MiningParameters miningParams =
-        ImmutableMiningParameters.builder()
+    final MiningConfiguration miningParams =
+        ImmutableMiningConfiguration.builder()
             .mutableInitValues(
                 MutableInitValues.builder()
                     .isMiningEnabled(true)
@@ -334,7 +335,7 @@ public class TestContextBuilder {
             forksSchedule,
             IBFT_EXTRA_DATA_ENCODER,
             EvmConfiguration.DEFAULT,
-            MiningParameters.MINING_DISABLED,
+            MiningConfiguration.MINING_DISABLED,
             new BadBlockManager(),
             false,
             new NoOpMetricsSystem());
@@ -350,11 +351,11 @@ public class TestContextBuilder {
             blockChain, epochManager, blockInterface);
 
     final ProtocolContext protocolContext =
-        new ProtocolContext(
-            blockChain,
-            worldStateArchive,
-            new BftContext(validatorProvider, epochManager, blockInterface),
-            new BadBlockManager());
+        new ProtocolContext.Builder()
+            .withBlockchain(blockChain)
+            .withWorldStateArchive(worldStateArchive)
+            .withConsensusContext(new BftContext(validatorProvider, epochManager, blockInterface))
+            .build();
     final TransactionPoolConfiguration poolConf =
         ImmutableTransactionPoolConfiguration.builder().txPoolMaxSize(1).build();
 
@@ -393,7 +394,7 @@ public class TestContextBuilder {
             ethScheduler);
 
     final ProposerSelector proposerSelector =
-        new ProposerSelector(blockChain, blockInterface, true, validatorProvider);
+        new BftProposerSelector(blockChain, blockInterface, true, validatorProvider);
 
     final BftExecutors bftExecutors =
         BftExecutors.create(new NoOpMetricsSystem(), BftExecutors.ConsensusType.IBFT);

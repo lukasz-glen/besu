@@ -15,17 +15,19 @@
 package org.hyperledger.besu.ethereum.eth.manager.snap;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.mockito.Mockito.mock;
 
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.core.BlockchainSetupUtil;
+import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.eth.manager.EthMessages;
 import org.hyperledger.besu.ethereum.eth.messages.snap.AccountRangeMessage;
 import org.hyperledger.besu.ethereum.eth.messages.snap.GetAccountRangeMessage;
 import org.hyperledger.besu.ethereum.eth.sync.snapsync.ImmutableSnapSyncConfiguration;
 import org.hyperledger.besu.ethereum.eth.sync.snapsync.SnapSyncConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.HeaderValidationMode;
-import org.hyperledger.besu.ethereum.trie.diffbased.common.DiffBasedWorldStateProvider;
+import org.hyperledger.besu.ethereum.trie.pathbased.common.provider.PathBasedWorldStateProvider;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateStorageCoordinator;
 import org.hyperledger.besu.plugin.services.storage.DataStorageFormat;
 
@@ -60,7 +62,7 @@ public class SnapServerGetAccountRangeTest {
   public void setupTest() {
     WorldStateStorageCoordinator worldStateStorageCoordinator =
         new WorldStateStorageCoordinator(
-            ((DiffBasedWorldStateProvider) protocolContext.getWorldStateArchive())
+            ((PathBasedWorldStateProvider) protocolContext.getWorldStateArchive())
                 .getWorldStateKeyValueStorage());
 
     SnapSyncConfiguration snapSyncConfiguration =
@@ -70,7 +72,8 @@ public class SnapServerGetAccountRangeTest {
                 snapSyncConfiguration,
                 new EthMessages(),
                 worldStateStorageCoordinator,
-                protocolContext)
+                protocolContext,
+                mock(Synchronizer.class))
             .start();
     initAccounts();
   }
@@ -376,7 +379,7 @@ public class SnapServerGetAccountRangeTest {
 
   @SuppressWarnings("UnusedVariable")
   private void initAccounts() {
-    rootHash = protocolContext.getWorldStateArchive().getMutable().rootHash();
+    rootHash = protocolContext.getWorldStateArchive().getWorldState().rootHash();
     GetAccountRangeMessage requestMessage =
         GetAccountRangeMessage.create(rootHash, Hash.ZERO, Hash.LAST, BigInteger.valueOf(4000));
     AccountRangeMessage resultMessage =

@@ -14,7 +14,6 @@
  */
 package org.hyperledger.besu.cli.options;
 
-import org.hyperledger.besu.cli.options.unstable.SynchronizerOptions;
 import org.hyperledger.besu.ethereum.eth.sync.SynchronizerConfiguration;
 import org.hyperledger.besu.ethereum.eth.sync.snapsync.ImmutableSnapSyncConfiguration;
 import org.hyperledger.besu.ethereum.eth.sync.snapsync.SnapSyncConfiguration;
@@ -79,7 +78,10 @@ public class SynchronizerOptionsTest
                 .bytecodeCountPerRequest(
                     SnapSyncConfiguration.DEFAULT_BYTECODE_COUNT_PER_REQUEST + 2)
                 .isSnapServerEnabled(Boolean.TRUE)
-                .build());
+                .isSnapSyncTransactionIndexingEnabled(Boolean.TRUE)
+                .build())
+        .snapSyncSavePreMergeHeadersOnlyEnabled(
+            SnapSyncConfiguration.DEFAULT_SNAP_SYNC_SAVE_PRE_MERGE_HEADERS_ONLY_ENABLED);
   }
 
   @Override

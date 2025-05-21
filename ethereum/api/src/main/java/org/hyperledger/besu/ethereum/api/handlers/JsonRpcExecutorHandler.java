@@ -24,7 +24,6 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.RpcErrorType;
 import java.io.IOException;
 import java.util.Optional;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.api.trace.Tracer;
 import io.vertx.core.Handler;
 import io.vertx.ext.web.RoutingContext;
@@ -37,18 +36,23 @@ public class JsonRpcExecutorHandler {
   private JsonRpcExecutorHandler() {}
 
   public static Handler<RoutingContext> handler(
-      final ObjectMapper jsonObjectMapper,
-      final JsonRpcExecutor jsonRpcExecutor,
-      final Tracer tracer,
-      final JsonRpcConfiguration jsonRpcConfiguration) {
-    return handler(jsonRpcExecutor, tracer, jsonRpcConfiguration);
-  }
-
-  public static Handler<RoutingContext> handler(
       final JsonRpcExecutor jsonRpcExecutor,
       final Tracer tracer,
       final JsonRpcConfiguration jsonRpcConfiguration) {
     return ctx -> {
+      final long timerId =
+          ctx.vertx()
+              .setTimer(
+                  jsonRpcConfiguration.getHttpTimeoutSec() * 1000,
+                  id -> {
+                    final String method =
+                        ctx.get(ContextKey.REQUEST_BODY_AS_JSON_OBJECT.name()).toString();
+                    LOG.error("Timeout occurred in JSON-RPC executor for method {}", method);
+                    handleErrorAndEndResponse(ctx, null, RpcErrorType.TIMEOUT_ERROR);
+                  });
+
+      ctx.put("timerId", timerId);
+
       try {
         createExecutor(jsonRpcExecutor, tracer, ctx, jsonRpcConfiguration)
             .ifPresentOrElse(
@@ -58,16 +62,36 @@ public class JsonRpcExecutorHandler {
                   } catch (IOException e) {
                     final String method = executor.getRpcMethodName(ctx);
                     LOG.error("{} - Error streaming JSON-RPC response", method, e);
-                    handleJsonRpcError(ctx, null, RpcErrorType.INTERNAL_ERROR);
+                    handleErrorAndEndResponse(ctx, null, RpcErrorType.INTERNAL_ERROR);
+                  } finally {
+                    cancelTimer(ctx);
                   }
                 },
-                () -> handleJsonRpcError(ctx, null, RpcErrorType.PARSE_ERROR));
+                () -> {
+                  handleErrorAndEndResponse(ctx, null, RpcErrorType.PARSE_ERROR);
+                  cancelTimer(ctx);
+                });
       } catch (final RuntimeException e) {
-        final String method = ctx.get(ContextKey.REQUEST_BODY_AS_JSON_OBJECT.name());
+        final String method = ctx.get(ContextKey.REQUEST_BODY_AS_JSON_OBJECT.name()).toString();
         LOG.error("Unhandled exception in JSON-RPC executor for method {}", method, e);
-        handleJsonRpcError(ctx, null, RpcErrorType.INTERNAL_ERROR);
+        handleErrorAndEndResponse(ctx, null, RpcErrorType.INTERNAL_ERROR);
+        cancelTimer(ctx);
       }
     };
+  }
+
+  private static void cancelTimer(final RoutingContext ctx) {
+    Long timerId = ctx.get("timerId");
+    if (timerId != null) {
+      ctx.vertx().cancelTimer(timerId);
+    }
+  }
+
+  private static void handleErrorAndEndResponse(
+      final RoutingContext ctx, final Object id, final RpcErrorType errorType) {
+    if (!ctx.response().ended()) {
+      handleJsonRpcError(ctx, id, errorType);
+    }
   }
 
   private static Optional<AbstractJsonRpcExecutor> createExecutor(

@@ -34,18 +34,22 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class PeerTransactionTracker implements EthPeer.DisconnectCallback {
+public class PeerTransactionTracker
+    implements EthPeer.DisconnectCallback, PendingTransactionDroppedListener {
   private static final Logger LOG = LoggerFactory.getLogger(PeerTransactionTracker.class);
 
-  private static final int MAX_TRACKED_SEEN_TRANSACTIONS = 100_000;
-
   private final EthPeers ethPeers;
+  private final int maxTrackedSeenTxsPerPeer;
+  private final boolean forgetEvictedTxsEnabled;
   private final Map<EthPeer, Set<Hash>> seenTransactions = new ConcurrentHashMap<>();
   private final Map<EthPeer, Set<Transaction>> transactionsToSend = new ConcurrentHashMap<>();
   private final Map<EthPeer, Set<Transaction>> transactionHashesToSend = new ConcurrentHashMap<>();
 
-  public PeerTransactionTracker(final EthPeers ethPeers) {
+  public PeerTransactionTracker(
+      final TransactionPoolConfiguration txPoolConfig, final EthPeers ethPeers) {
     this.ethPeers = ethPeers;
+    this.maxTrackedSeenTxsPerPeer = txPoolConfig.getUnstable().getMaxTrackedSeenTxsPerPeer();
+    this.forgetEvictedTxsEnabled = txPoolConfig.getUnstable().getPeerTrackerForgetEvictedTxs();
   }
 
   public void reset() {
@@ -122,13 +126,14 @@ public class PeerTransactionTracker implements EthPeer.DisconnectCallback {
   }
 
   private <T> Set<T> createTransactionsSet() {
-    return Collections.newSetFromMap(
-        new LinkedHashMap<>(1 << 4, 0.75f, true) {
-          @Override
-          protected boolean removeEldestEntry(final Map.Entry<T, Boolean> eldest) {
-            return size() > MAX_TRACKED_SEEN_TRANSACTIONS;
-          }
-        });
+    return Collections.synchronizedSet(
+        Collections.newSetFromMap(
+            new LinkedHashMap<>(16, 0.75f, true) {
+              @Override
+              protected boolean removeEldestEntry(final Map.Entry<T, Boolean> eldest) {
+                return size() > maxTrackedSeenTxsPerPeer;
+              }
+            }));
   }
 
   @Override
@@ -174,5 +179,12 @@ public class PeerTransactionTracker implements EthPeer.DisconnectCallback {
 
   private String logPeerSet(final Set<EthPeer> peers) {
     return peers.stream().map(EthPeer::getLoggableId).collect(Collectors.joining(","));
+  }
+
+  @Override
+  public void onTransactionDropped(final Transaction transaction, final RemovalReason reason) {
+    if (reason.stopTracking() && forgetEvictedTxsEnabled) {
+      seenTransactions.values().stream().forEach(st -> st.remove(transaction.getHash()));
+    }
   }
 }

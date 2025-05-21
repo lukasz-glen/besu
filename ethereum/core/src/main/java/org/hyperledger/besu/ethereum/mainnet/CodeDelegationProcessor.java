@@ -14,11 +14,14 @@
  */
 package org.hyperledger.besu.ethereum.mainnet;
 
+import static org.hyperledger.besu.evm.account.Account.MAX_NONCE;
+
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.ethereum.core.CodeDelegation;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.evm.account.MutableAccount;
-import org.hyperledger.besu.evm.worldstate.EVMWorldUpdater;
+import org.hyperledger.besu.evm.worldstate.CodeDelegationService;
+import org.hyperledger.besu.evm.worldstate.WorldUpdater;
 
 import java.math.BigInteger;
 import java.util.Optional;
@@ -30,9 +33,16 @@ public class CodeDelegationProcessor {
   private static final Logger LOG = LoggerFactory.getLogger(CodeDelegationProcessor.class);
 
   private final Optional<BigInteger> maybeChainId;
+  private final BigInteger halfCurveOrder;
+  private final CodeDelegationService codeDelegationService;
 
-  public CodeDelegationProcessor(final Optional<BigInteger> maybeChainId) {
+  public CodeDelegationProcessor(
+      final Optional<BigInteger> maybeChainId,
+      final BigInteger halfCurveOrder,
+      final CodeDelegationService codeDelegationService) {
     this.maybeChainId = maybeChainId;
+    this.halfCurveOrder = halfCurveOrder;
+    this.codeDelegationService = codeDelegationService;
   }
 
   /**
@@ -52,12 +62,12 @@ public class CodeDelegationProcessor {
    *   <li>Increase the nonce of `authority` by one.
    * </ol>
    *
-   * @param evmWorldUpdater The world state updater which is aware of code delegation.
+   * @param worldUpdater The world state updater which is aware of code delegation.
    * @param transaction The transaction being processed.
    * @return The result of the code delegation processing.
    */
   public CodeDelegationResult process(
-      final EVMWorldUpdater evmWorldUpdater, final Transaction transaction) {
+      final WorldUpdater worldUpdater, final Transaction transaction) {
     final CodeDelegationResult result = new CodeDelegationResult();
 
     transaction
@@ -65,16 +75,16 @@ public class CodeDelegationProcessor {
         .get()
         .forEach(
             codeDelegation ->
-                processAuthorization(
-                    evmWorldUpdater,
+                processCodeDelegation(
+                    worldUpdater,
                     (org.hyperledger.besu.ethereum.core.CodeDelegation) codeDelegation,
                     result));
 
     return result;
   }
 
-  private void processAuthorization(
-      final EVMWorldUpdater evmWorldUpdater,
+  private void processCodeDelegation(
+      final WorldUpdater worldUpdater,
       final CodeDelegation codeDelegation,
       final CodeDelegationResult result) {
     LOG.trace("Processing code delegation: {}", codeDelegation);
@@ -89,6 +99,17 @@ public class CodeDelegationProcessor {
       return;
     }
 
+    if (codeDelegation.nonce() == MAX_NONCE) {
+      LOG.trace("Nonce of code delegation must be less than 2^64-1");
+      return;
+    }
+
+    if (codeDelegation.signature().getS().compareTo(halfCurveOrder) > 0) {
+      LOG.trace(
+          "Invalid signature for code delegation. S value must be less or equal than the half curve order.");
+      return;
+    }
+
     final Optional<Address> authorizer = codeDelegation.authorizer();
     if (authorizer.isEmpty()) {
       LOG.trace("Invalid signature for code delegation");
@@ -98,18 +119,22 @@ public class CodeDelegationProcessor {
     LOG.trace("Set code delegation for authority: {}", authorizer.get());
 
     final Optional<MutableAccount> maybeAuthorityAccount =
-        Optional.ofNullable(evmWorldUpdater.getAccount(authorizer.get()));
+        Optional.ofNullable(worldUpdater.getAccount(authorizer.get()));
 
     result.addAccessedDelegatorAddress(authorizer.get());
 
     MutableAccount authority;
     boolean authorityDoesAlreadyExist = false;
     if (maybeAuthorityAccount.isEmpty()) {
-      authority = evmWorldUpdater.createAccount(authorizer.get());
+      // only create an account if nonce is valid
+      if (codeDelegation.nonce() != 0) {
+        return;
+      }
+      authority = worldUpdater.createAccount(authorizer.get());
     } else {
       authority = maybeAuthorityAccount.get();
 
-      if (!evmWorldUpdater.authorizedCodeService().canSetDelegatedCode(authority)) {
+      if (!codeDelegationService.canSetCodeDelegation(authority)) {
         return;
       }
 
@@ -125,10 +150,10 @@ public class CodeDelegationProcessor {
     }
 
     if (authorityDoesAlreadyExist) {
-      result.incremenentAlreadyExistingDelegators();
+      result.incrementAlreadyExistingDelegators();
     }
 
-    evmWorldUpdater.authorizedCodeService().addDelegatedCode(authority, codeDelegation.address());
+    codeDelegationService.processCodeDelegation(authority, codeDelegation.address());
     authority.incrementNonce();
   }
 }

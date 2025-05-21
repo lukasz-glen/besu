@@ -14,10 +14,10 @@
  */
 package org.hyperledger.besu.cli;
 
-import org.hyperledger.besu.BesuInfo;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPoolConfiguration;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.services.BesuPluginContextImpl;
+import org.hyperledger.besu.util.BesuVersionUtils;
 import org.hyperledger.besu.util.log.FramedLogMessage;
 import org.hyperledger.besu.util.platform.PlatformDetector;
 
@@ -53,12 +53,10 @@ public class ConfigurationOverviewBuilder {
   private Collection<String> engineApis;
   private String engineJwtFilePath;
   private boolean isHighSpec = false;
-  private boolean isBonsaiLimitTrieLogsEnabled = false;
+  private boolean isLimitTrieLogsEnabled = false;
   private long trieLogRetentionLimit = 0;
   private Integer trieLogsPruningWindowSize = null;
   private boolean isSnapServerEnabled = false;
-  private boolean isSnapSyncBftEnabled = false;
-  private boolean isSnapSyncToHeadEnabled = true;
   private TransactionPoolConfiguration.Implementation txPoolImplementation;
   private EvmConfiguration.WorldUpdaterMode worldStateUpdateMode;
   private Map<String, String> environment;
@@ -221,7 +219,7 @@ public class ConfigurationOverviewBuilder {
    * @return the builder
    */
   public ConfigurationOverviewBuilder setLimitTrieLogsEnabled() {
-    isBonsaiLimitTrieLogsEnabled = true;
+    isLimitTrieLogsEnabled = true;
     return this;
   }
 
@@ -244,29 +242,6 @@ public class ConfigurationOverviewBuilder {
    */
   public ConfigurationOverviewBuilder setSnapServerEnabled(final boolean snapServerEnabled) {
     isSnapServerEnabled = snapServerEnabled;
-    return this;
-  }
-
-  /**
-   * Sets snap sync BFT enabled/disabled
-   *
-   * @param snapSyncBftEnabled bool to indicate if snap sync for BFT is enabled
-   * @return the builder
-   */
-  public ConfigurationOverviewBuilder setSnapSyncBftEnabled(final boolean snapSyncBftEnabled) {
-    isSnapSyncBftEnabled = snapSyncBftEnabled;
-    return this;
-  }
-
-  /**
-   * Sets snap sync to head enabled/disabled
-   *
-   * @param snapSyncToHeadEnabled bool to indicate if snap sync to head is enabled
-   * @return the builder
-   */
-  public ConfigurationOverviewBuilder setSnapSyncToHeadEnabled(
-      final boolean snapSyncToHeadEnabled) {
-    isSnapSyncToHeadEnabled = snapSyncToHeadEnabled;
     return this;
   }
 
@@ -334,7 +309,7 @@ public class ConfigurationOverviewBuilder {
    */
   public String build() {
     final List<String> lines = new ArrayList<>();
-    lines.add("Besu version " + BesuInfo.class.getPackage().getImplementationVersion());
+    lines.add("Besu version " + BesuVersionUtils.shortVersion());
     lines.add("");
     lines.add("Configuration:");
 
@@ -362,7 +337,8 @@ public class ConfigurationOverviewBuilder {
     }
 
     if (syncMode != null) {
-      lines.add("Sync mode: " + syncMode);
+      lines.add(
+          "Sync mode: " + syncMode + (syncMode.equalsIgnoreCase("FAST") ? " (Deprecated)" : ""));
     }
 
     if (syncMinPeers != null) {
@@ -398,15 +374,7 @@ public class ConfigurationOverviewBuilder {
       lines.add("Experimental Snap Sync server enabled");
     }
 
-    if (isSnapSyncBftEnabled) {
-      lines.add("Experimental Snap Sync for BFT enabled");
-    }
-
-    if (isSnapSyncToHeadEnabled) {
-      lines.add("Snap Sync to Head enabled");
-    }
-
-    if (isBonsaiLimitTrieLogsEnabled) {
+    if (isLimitTrieLogsEnabled) {
       final StringBuilder trieLogPruningString = new StringBuilder();
       trieLogPruningString
           .append("Limit trie logs enabled: retention: ")
@@ -450,14 +418,18 @@ public class ConfigurationOverviewBuilder {
   private void detectJemalloc(final List<String> lines) {
     Optional.ofNullable(Objects.isNull(environment) ? null : environment.get("BESU_USING_JEMALLOC"))
         .ifPresentOrElse(
-            t -> {
+            jemallocEnabled -> {
               try {
-                final String version = PlatformDetector.getJemalloc();
-                lines.add("jemalloc: " + version);
+                if (Boolean.parseBoolean(jemallocEnabled)) {
+                  final String version = PlatformDetector.getJemalloc();
+                  lines.add("jemalloc: " + version);
+                } else {
+                  logger.warn(
+                      "besu_using_jemalloc is present but is not set to true, jemalloc library not loaded");
+                }
               } catch (final Throwable throwable) {
                 logger.warn(
-                    "BESU_USING_JEMALLOC is present but we failed to load jemalloc library to get the version",
-                    throwable);
+                    "besu_using_jemalloc is present but we failed to load jemalloc library to get the version");
               }
             },
             () -> {

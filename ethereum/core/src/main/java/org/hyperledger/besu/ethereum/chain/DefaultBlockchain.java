@@ -19,6 +19,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyList;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
+import static org.hyperledger.besu.metrics.BesuMetricCategory.BLOCKCHAIN;
 
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.ethereum.chain.BlockchainStorage.Updater;
@@ -32,7 +33,6 @@ import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.core.TransactionReceipt;
 import org.hyperledger.besu.metrics.BesuMetricCategory;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
-import org.hyperledger.besu.metrics.prometheus.PrometheusMetricsSystem;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.metrics.Counter;
 import org.hyperledger.besu.util.InvalidConfigurationException;
@@ -56,7 +56,6 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Streams;
-import io.prometheus.client.guava.cache.CacheMetricsCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -113,9 +112,14 @@ public class DefaultBlockchain implements MutableBlockchain {
     final Hash chainHead = blockchainStorage.getChainHead().get();
     chainHeader = blockchainStorage.getBlockHeader(chainHead).get();
     totalDifficulty = blockchainStorage.getTotalDifficulty(chainHead).get();
-    final BlockBody chainHeadBody = blockchainStorage.getBlockBody(chainHead).get();
-    chainHeadTransactionCount = chainHeadBody.getTransactions().size();
-    chainHeadOmmerCount = chainHeadBody.getOmmers().size();
+
+    blockchainStorage
+        .getBlockBody(chainHead)
+        .ifPresent(
+            headBlockBody -> {
+              chainHeadTransactionCount = headBlockBody.getTransactions().size();
+              chainHeadOmmerCount = headBlockBody.getOmmers().size();
+            });
 
     this.reorgLoggingThreshold = reorgLoggingThreshold;
     this.blockChoiceRule = heaviestChainBlockChoiceRule;
@@ -134,13 +138,12 @@ public class DefaultBlockchain implements MutableBlockchain {
       totalDifficultyCache =
           Optional.of(
               CacheBuilder.newBuilder().recordStats().maximumSize(numberOfBlocksToCache).build());
-      CacheMetricsCollector cacheMetrics = new CacheMetricsCollector();
-      cacheMetrics.addCache("blockHeaders", blockHeadersCache.get());
-      cacheMetrics.addCache("blockBodies", blockBodiesCache.get());
-      cacheMetrics.addCache("transactionReceipts", transactionReceiptsCache.get());
-      cacheMetrics.addCache("totalDifficulty", totalDifficultyCache.get());
-      if (metricsSystem instanceof PrometheusMetricsSystem prometheusMetricsSystem)
-        prometheusMetricsSystem.addCollector(BesuMetricCategory.BLOCKCHAIN, () -> cacheMetrics);
+      metricsSystem.createGuavaCacheCollector(BLOCKCHAIN, "blockHeaders", blockHeadersCache.get());
+      metricsSystem.createGuavaCacheCollector(BLOCKCHAIN, "blockBodies", blockBodiesCache.get());
+      metricsSystem.createGuavaCacheCollector(
+          BLOCKCHAIN, "transactionReceipts", transactionReceiptsCache.get());
+      metricsSystem.createGuavaCacheCollector(
+          BLOCKCHAIN, "totalDifficulty", totalDifficultyCache.get());
     } else {
       blockHeadersCache = Optional.empty();
       blockBodiesCache = Optional.empty();
@@ -155,11 +158,11 @@ public class DefaultBlockchain implements MutableBlockchain {
   private void createCounters(final MetricsSystem metricsSystem) {
     gasUsedCounter =
         metricsSystem.createCounter(
-            BesuMetricCategory.BLOCKCHAIN, "chain_head_gas_used_counter", "Counter for Gas used");
+            BLOCKCHAIN, "chain_head_gas_used_counter", "Counter for Gas used");
 
     numberOfTransactionsCounter =
         metricsSystem.createCounter(
-            BesuMetricCategory.BLOCKCHAIN,
+            BLOCKCHAIN,
             "chain_head_transaction_count_counter",
             "Counter for the number of transactions");
   }
@@ -184,37 +187,37 @@ public class DefaultBlockchain implements MutableBlockchain {
         this::getSafeBlockNumber);
 
     metricsSystem.createGauge(
-        BesuMetricCategory.BLOCKCHAIN,
-        "difficulty_total",
+        BLOCKCHAIN,
+        "difficulty",
         "Total difficulty of the chainhead",
         () -> this.getChainHead().getTotalDifficulty().toBigInteger().doubleValue());
 
     metricsSystem.createLongGauge(
-        BesuMetricCategory.BLOCKCHAIN,
+        BLOCKCHAIN,
         "chain_head_timestamp",
         "Timestamp from the current chain head",
         () -> getChainHeadHeader().getTimestamp());
 
     metricsSystem.createLongGauge(
-        BesuMetricCategory.BLOCKCHAIN,
+        BLOCKCHAIN,
         "chain_head_gas_used",
         "Gas used by the current chain head block",
         () -> getChainHeadHeader().getGasUsed());
 
     metricsSystem.createLongGauge(
-        BesuMetricCategory.BLOCKCHAIN,
+        BLOCKCHAIN,
         "chain_head_gas_limit",
         "Block gas limit of the current chain head block",
         () -> getChainHeadHeader().getGasLimit());
 
     metricsSystem.createIntegerGauge(
-        BesuMetricCategory.BLOCKCHAIN,
+        BLOCKCHAIN,
         "chain_head_transaction_count",
         "Number of transactions in the current chain head block",
         () -> chainHeadTransactionCount);
 
     metricsSystem.createIntegerGauge(
-        BesuMetricCategory.BLOCKCHAIN,
+        BLOCKCHAIN,
         "chain_head_ommer_count",
         "Number of ommers in the current chain head block",
         () -> chainHeadOmmerCount);
@@ -419,13 +422,32 @@ public class DefaultBlockchain implements MutableBlockchain {
   @Override
   public synchronized void appendBlock(final Block block, final List<TransactionReceipt> receipts) {
     if (numberOfBlocksToCache != 0) cacheBlockData(block, receipts);
-    appendBlockHelper(new BlockWithReceipts(block, receipts), false);
+    appendBlockHelper(new BlockWithReceipts(block, receipts), false, true);
+  }
+
+  @Override
+  public synchronized void appendBlockWithoutIndexingTransactions(
+      final Block block, final List<TransactionReceipt> receipts) {
+    if (numberOfBlocksToCache != 0) cacheBlockData(block, receipts);
+    appendBlockHelper(new BlockWithReceipts(block, receipts), false, false);
   }
 
   @Override
   public synchronized void storeBlock(final Block block, final List<TransactionReceipt> receipts) {
     if (numberOfBlocksToCache != 0) cacheBlockData(block, receipts);
-    appendBlockHelper(new BlockWithReceipts(block, receipts), true);
+    appendBlockHelper(new BlockWithReceipts(block, receipts), true, true);
+  }
+
+  @Override
+  public void unsafeStoreHeader(final BlockHeader blockHeader, final Difficulty totalDifficulty) {
+    final BlockchainStorage.Updater updater = blockchainStorage.updater();
+    updater.putBlockHeader(blockHeader.getHash(), blockHeader);
+    updater.putBlockHash(blockHeader.getNumber(), blockHeader.getBlockHash());
+    updater.putTotalDifficulty(blockHeader.getHash(), totalDifficulty);
+    this.chainHeader = blockHeader;
+    this.totalDifficulty = totalDifficulty;
+    updater.setChainHead(blockHeader.getBlockHash());
+    updater.commit();
   }
 
   private void cacheBlockData(final Block block, final List<TransactionReceipt> receipts) {
@@ -449,7 +471,9 @@ public class DefaultBlockchain implements MutableBlockchain {
   }
 
   private void appendBlockHelper(
-      final BlockWithReceipts blockWithReceipts, final boolean storeOnly) {
+      final BlockWithReceipts blockWithReceipts,
+      final boolean storeOnly,
+      final boolean transactionIndexing) {
 
     if (!blockShouldBeProcessed(blockWithReceipts.getBlock(), blockWithReceipts.getReceipts())) {
       return;
@@ -471,7 +495,7 @@ public class DefaultBlockchain implements MutableBlockchain {
     if (storeOnly) {
       blockAddedEvent = handleStoreOnly(blockWithReceipts);
     } else {
-      blockAddedEvent = updateCanonicalChainData(updater, blockWithReceipts);
+      blockAddedEvent = updateCanonicalChainData(updater, blockWithReceipts, transactionIndexing);
       if (blockAddedEvent.isNewCanonicalHead()) {
         updateCacheForNewCanonicalHead(block, td);
       }
@@ -487,18 +511,14 @@ public class DefaultBlockchain implements MutableBlockchain {
       final List<TransactionReceipt> transactionReceipts,
       final Optional<Difficulty> maybeTotalDifficulty) {
     final BlockchainStorage.Updater updater = blockchainStorage.updater();
-    final Hash hash = block.getHash();
-    updater.putBlockHeader(hash, block.getHeader());
-    updater.putBlockHash(block.getHeader().getNumber(), hash);
-    updater.putBlockBody(hash, block.getBody());
-    final int nbTrx = block.getBody().getTransactions().size();
-    for (int i = 0; i < nbTrx; i++) {
-      final Hash transactionHash = block.getBody().getTransactions().get(i).getHash();
-      updater.putTransactionLocation(transactionHash, new TransactionLocation(transactionHash, i));
-    }
-    updater.putTransactionReceipts(hash, transactionReceipts);
+    final Hash blockHash = block.getHash();
+    updater.putBlockHeader(blockHash, block.getHeader());
+    updater.putBlockHash(block.getHeader().getNumber(), blockHash);
+    updater.putBlockBody(blockHash, block.getBody());
+    indexTransactionsForBlock(updater, blockHash, block.getBody().getTransactions());
+    updater.putTransactionReceipts(blockHash, transactionReceipts);
     maybeTotalDifficulty.ifPresent(
-        totalDifficulty -> updater.putTotalDifficulty(hash, totalDifficulty));
+        totalDifficulty -> updater.putTotalDifficulty(blockHash, totalDifficulty));
     updater.commit();
   }
 
@@ -527,7 +547,9 @@ public class DefaultBlockchain implements MutableBlockchain {
   }
 
   private BlockAddedEvent updateCanonicalChainData(
-      final BlockchainStorage.Updater updater, final BlockWithReceipts blockWithReceipts) {
+      final Updater updater,
+      final BlockWithReceipts blockWithReceipts,
+      final boolean transactionIndexing) {
 
     final Block newBlock = blockWithReceipts.getBlock();
     final Hash chainHead = blockchainStorage.getChainHead().orElse(null);
@@ -538,7 +560,7 @@ public class DefaultBlockchain implements MutableBlockchain {
 
     try {
       if (newBlock.getHeader().getParentHash().equals(chainHead) || chainHead == null) {
-        return handleNewHead(updater, blockWithReceipts);
+        return handleNewHead(updater, blockWithReceipts, transactionIndexing);
       } else if (blockChoiceRule.compare(newBlock.getHeader(), chainHeader) > 0) {
         // New block represents a chain reorganization
         return handleChainReorg(updater, blockWithReceipts);
@@ -559,14 +581,18 @@ public class DefaultBlockchain implements MutableBlockchain {
   }
 
   private BlockAddedEvent handleNewHead(
-      final Updater updater, final BlockWithReceipts blockWithReceipts) {
+      final Updater updater,
+      final BlockWithReceipts blockWithReceipts,
+      final boolean transactionIndexing) {
     // This block advances the chain, update the chain head
     final Hash newBlockHash = blockWithReceipts.getHash();
 
     updater.putBlockHash(blockWithReceipts.getNumber(), newBlockHash);
     updater.setChainHead(newBlockHash);
-    indexTransactionForBlock(
-        updater, newBlockHash, blockWithReceipts.getBlock().getBody().getTransactions());
+    if (transactionIndexing) {
+      indexTransactionsForBlock(
+          updater, newBlockHash, blockWithReceipts.getBlock().getBody().getTransactions());
+    }
     gasUsedCounter.inc(blockWithReceipts.getHeader().getGasUsed());
     numberOfTransactionsCounter.inc(
         blockWithReceipts.getBlock().getBody().getTransactions().size());
@@ -654,7 +680,7 @@ public class DefaultBlockchain implements MutableBlockchain {
     // Update indexed transactions
     newTransactions.forEach(
         (blockHash, transactionsInBlock) -> {
-          indexTransactionForBlock(updater, blockHash, transactionsInBlock);
+          indexTransactionsForBlock(updater, blockHash, transactionsInBlock);
           // Don't remove transactions that are being re-indexed.
           removedTransactions.removeAll(transactionsInBlock);
         });
@@ -727,10 +753,9 @@ public class DefaultBlockchain implements MutableBlockchain {
       final Block block = blockWithReceipts.getBlock();
 
       var reorgEvent = handleChainReorg(updater, blockWithReceipts);
+      updateCacheForNewCanonicalHead(block, calculateTotalDifficulty(block.getHeader()));
       updater.commit();
       blockAddedObservers.forEach(o -> o.onBlockAdded(reorgEvent));
-
-      updateCacheForNewCanonicalHead(block, calculateTotalDifficulty(block.getHeader()));
       return true;
     } catch (final NoSuchElementException e) {
       // Any Optional.get() calls in this block should be present, missing data means data
@@ -751,7 +776,7 @@ public class DefaultBlockchain implements MutableBlockchain {
     try {
       final BlockWithReceipts blockWithReceipts = getBlockWithReceipts(blockHeader).get();
 
-      BlockAddedEvent newHeadEvent = handleNewHead(updater, blockWithReceipts);
+      BlockAddedEvent newHeadEvent = handleNewHead(updater, blockWithReceipts, true);
       updateCacheForNewCanonicalHead(
           blockWithReceipts.getBlock(), calculateTotalDifficulty(blockHeader));
       updater.commit();
@@ -794,11 +819,11 @@ public class DefaultBlockchain implements MutableBlockchain {
     chainHeadOmmerCount = block.getBody().getOmmers().size();
   }
 
-  private static void indexTransactionForBlock(
-      final BlockchainStorage.Updater updater, final Hash hash, final List<Transaction> txs) {
-    for (int i = 0; i < txs.size(); i++) {
-      final Hash txHash = txs.get(i).getHash();
-      final TransactionLocation loc = new TransactionLocation(hash, i);
+  private static void indexTransactionsForBlock(
+      final BlockchainStorage.Updater updater, final Hash blockHash, final List<Transaction> txs) {
+    for (int index = 0; index < txs.size(); index++) {
+      final Hash txHash = txs.get(index).getHash();
+      final TransactionLocation loc = new TransactionLocation(blockHash, index);
       updater.putTransactionLocation(txHash, loc);
     }
   }
@@ -941,5 +966,9 @@ public class DefaultBlockchain implements MutableBlockchain {
 
   public Optional<Cache<Hash, Difficulty>> getTotalDifficultyCache() {
     return totalDifficultyCache;
+  }
+
+  public BlockchainStorage getBlockchainStorage() {
+    return blockchainStorage;
   }
 }

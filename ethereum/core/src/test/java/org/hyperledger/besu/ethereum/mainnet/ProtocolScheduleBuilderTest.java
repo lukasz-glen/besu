@@ -27,11 +27,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import org.hyperledger.besu.config.GenesisConfigOptions;
+import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
 import org.hyperledger.besu.ethereum.core.MilestoneStreamingProtocolSchedule;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.PrivacyParameters;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
@@ -62,12 +63,12 @@ class ProtocolScheduleBuilderTest {
     builder =
         new ProtocolScheduleBuilder(
             configOptions,
-            CHAIN_ID,
+            Optional.of(CHAIN_ID),
             ProtocolSpecAdapters.create(0, Function.identity()),
             new PrivacyParameters(),
             false,
             EvmConfiguration.DEFAULT,
-            MiningParameters.MINING_DISABLED,
+            MiningConfiguration.MINING_DISABLED,
             new BadBlockManager(),
             false,
             new NoOpMetricsSystem());
@@ -82,6 +83,10 @@ class ProtocolScheduleBuilderTest {
     when(configOptions.getShanghaiTime()).thenReturn(OptionalLong.of(PRE_SHANGHAI_TIMESTAMP + 1));
     when(configOptions.getCancunTime()).thenReturn(OptionalLong.of(PRE_SHANGHAI_TIMESTAMP + 3));
     when(configOptions.getPragueTime()).thenReturn(OptionalLong.of(PRE_SHANGHAI_TIMESTAMP + 5));
+    when(configOptions.getDepositContractAddress()).thenReturn(Optional.of(Address.ZERO));
+    when(configOptions.getConsolidationRequestContractAddress())
+        .thenReturn(Optional.of(Address.ZERO));
+    when(configOptions.getWithdrawalRequestContractAddress()).thenReturn(Optional.of(Address.ZERO));
     final ProtocolSchedule protocolSchedule = builder.createProtocolSchedule();
 
     assertThat(protocolSchedule.getChainId()).contains(CHAIN_ID);
@@ -142,7 +147,10 @@ class ProtocolScheduleBuilderTest {
     when(configOptions.getShanghaiTime()).thenReturn(OptionalLong.of(0));
     when(configOptions.getCancunTime()).thenReturn(OptionalLong.of(0));
     when(configOptions.getPragueTime()).thenReturn(OptionalLong.of(PRAGUE_TIME));
-
+    when(configOptions.getDepositContractAddress()).thenReturn(Optional.of(Address.ZERO));
+    when(configOptions.getConsolidationRequestContractAddress())
+        .thenReturn(Optional.of(Address.ZERO));
+    when(configOptions.getWithdrawalRequestContractAddress()).thenReturn(Optional.of(Address.ZERO));
     final ProtocolSchedule protocolSchedule = builder.createProtocolSchedule();
 
     final Optional<Long> maybeBerlinMileStone = protocolSchedule.milestoneFor(BERLIN);
@@ -257,12 +265,12 @@ class ProtocolScheduleBuilderTest {
     final ProtocolScheduleBuilder builder =
         new ProtocolScheduleBuilder(
             configOptions,
-            CHAIN_ID,
+            Optional.of(CHAIN_ID),
             ProtocolSpecAdapters.create(blockNumber, modifier),
             new PrivacyParameters(),
             false,
             EvmConfiguration.DEFAULT,
-            MiningParameters.MINING_DISABLED,
+            MiningConfiguration.MINING_DISABLED,
             new BadBlockManager(),
             false,
             new NoOpMetricsSystem());

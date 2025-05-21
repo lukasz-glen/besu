@@ -21,7 +21,7 @@ import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.eth.manager.EthContext;
 import org.hyperledger.besu.ethereum.eth.manager.EthPeer;
-import org.hyperledger.besu.ethereum.eth.messages.EthPV65;
+import org.hyperledger.besu.ethereum.eth.messages.EthProtocolMessages;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPool.TransactionBatchAddedListener;
 
 import java.util.ArrayList;
@@ -37,7 +37,8 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TransactionBroadcaster implements TransactionBatchAddedListener {
+public class TransactionBroadcaster
+    implements TransactionBatchAddedListener, PendingTransactionDroppedListener {
   private static final Logger LOG = LoggerFactory.getLogger(TransactionBroadcaster.class);
 
   private static final EnumSet<TransactionType> ANNOUNCE_HASH_ONLY_TX_TYPES = EnumSet.of(BLOB);
@@ -81,7 +82,7 @@ public class TransactionBroadcaster implements TransactionBatchAddedListener {
   public void relayTransactionPoolTo(
       final EthPeer peer, final Collection<PendingTransaction> pendingTransactions) {
     if (!pendingTransactions.isEmpty()) {
-      if (peer.hasSupportForMessage(EthPV65.NEW_POOLED_TRANSACTION_HASHES)) {
+      if (peer.hasSupportForMessage(EthProtocolMessages.NEW_POOLED_TRANSACTION_HASHES)) {
         sendTransactionHashes(toTransactionList(pendingTransactions), List.of(peer));
       } else {
         // we need to exclude txs that support hash only broadcasting
@@ -119,7 +120,7 @@ public class TransactionBroadcaster implements TransactionBatchAddedListener {
         .streamAvailablePeers()
         .forEach(
             peer -> {
-              if (peer.hasSupportForMessage(EthPV65.NEW_POOLED_TRANSACTION_HASHES)) {
+              if (peer.hasSupportForMessage(EthProtocolMessages.NEW_POOLED_TRANSACTION_HASHES)) {
                 sendOnlyHashPeers.add(peer);
               } else {
                 sendOnlyFullTransactionPeers.add(peer);
@@ -218,5 +219,10 @@ public class TransactionBroadcaster implements TransactionBatchAddedListener {
     for (int i = sourceList.size() - 1; i >= stopIndex; i--) {
       destinationList.add(sourceList.remove(i));
     }
+  }
+
+  @Override
+  public void onTransactionDropped(final Transaction transaction, final RemovalReason reason) {
+    transactionTracker.onTransactionDropped(transaction, reason);
   }
 }

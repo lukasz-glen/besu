@@ -23,11 +23,11 @@ import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.api.ImmutableApiConfiguration;
 import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.blockcreation.PoWMiningCoordinator;
-import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.BlockchainSetupUtil;
 import org.hyperledger.besu.ethereum.core.DefaultSyncStatus;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.ImmutableMiningConfiguration;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.eth.EthProtocol;
@@ -37,6 +37,7 @@ import org.hyperledger.besu.ethereum.eth.transactions.TransactionPool;
 import org.hyperledger.besu.ethereum.mainnet.ValidationResult;
 import org.hyperledger.besu.ethereum.p2p.rlpx.wire.Capability;
 import org.hyperledger.besu.ethereum.transaction.TransactionInvalidReason;
+import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.plugin.data.SyncStatus;
 import org.hyperledger.besu.plugin.services.storage.DataStorageFormat;
 
@@ -109,8 +110,10 @@ public abstract class AbstractEthGraphQLHttpServiceTest {
 
     final MutableBlockchain blockchain = blockchainSetupUtil.getBlockchain();
     ProtocolContext context =
-        new ProtocolContext(
-            blockchain, blockchainSetupUtil.getWorldArchive(), null, new BadBlockManager());
+        new ProtocolContext.Builder()
+            .withBlockchain(blockchain)
+            .withWorldStateArchive(blockchainSetupUtil.getWorldArchive())
+            .build();
     final BlockchainQueries blockchainQueries =
         new BlockchainQueries(
             blockchainSetupUtil.getProtocolSchedule(),
@@ -119,17 +122,24 @@ public abstract class AbstractEthGraphQLHttpServiceTest {
             Optional.empty(),
             Optional.empty(),
             ImmutableApiConfiguration.builder().build(),
-            MiningParameters.newDefault().setMinTransactionGasPrice(Wei.ZERO));
+            MiningConfiguration.newDefault().setMinTransactionGasPrice(Wei.ZERO));
 
     final Set<Capability> supportedCapabilities = new HashSet<>();
-    supportedCapabilities.add(EthProtocol.ETH62);
-    supportedCapabilities.add(EthProtocol.ETH63);
+    supportedCapabilities.add(EthProtocol.LATEST);
 
     final GraphQLConfiguration config = GraphQLConfiguration.createDefault();
 
     config.setPort(0);
     final GraphQLDataFetchers dataFetchers = new GraphQLDataFetchers(supportedCapabilities);
     final GraphQL graphQL = GraphQLProvider.buildGraphQL(dataFetchers);
+
+    final var transactionSimulator =
+        new TransactionSimulator(
+            blockchain,
+            blockchainSetupUtil.getWorldArchive(),
+            blockchainSetupUtil.getProtocolSchedule(),
+            ImmutableMiningConfiguration.newDefault(),
+            0L);
 
     service =
         new GraphQLHttpService(
@@ -148,8 +158,8 @@ public abstract class AbstractEthGraphQLHttpServiceTest {
                 miningCoordinatorMock,
                 GraphQLContextType.SYNCHRONIZER,
                 synchronizerMock,
-                GraphQLContextType.GAS_CAP,
-                0L),
+                GraphQLContextType.TRANSACTION_SIMULATOR,
+                transactionSimulator),
             mock(EthScheduler.class));
     service.start().join();
 

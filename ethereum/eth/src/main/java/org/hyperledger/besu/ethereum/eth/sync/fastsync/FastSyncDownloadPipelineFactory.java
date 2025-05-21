@@ -29,7 +29,9 @@ import org.hyperledger.besu.ethereum.eth.manager.EthScheduler;
 import org.hyperledger.besu.ethereum.eth.sync.DownloadBodiesStep;
 import org.hyperledger.besu.ethereum.eth.sync.DownloadHeadersStep;
 import org.hyperledger.besu.ethereum.eth.sync.DownloadPipelineFactory;
+import org.hyperledger.besu.ethereum.eth.sync.SavePreMergeHeadersStep;
 import org.hyperledger.besu.ethereum.eth.sync.SynchronizerConfiguration;
+import org.hyperledger.besu.ethereum.eth.sync.fastsync.checkpoint.Checkpoint;
 import org.hyperledger.besu.ethereum.eth.sync.fullsync.SyncTerminationCondition;
 import org.hyperledger.besu.ethereum.eth.sync.range.RangeHeadersFetcher;
 import org.hyperledger.besu.ethereum.eth.sync.range.RangeHeadersValidationStep;
@@ -37,7 +39,6 @@ import org.hyperledger.besu.ethereum.eth.sync.range.SyncTargetRange;
 import org.hyperledger.besu.ethereum.eth.sync.range.SyncTargetRangeSource;
 import org.hyperledger.besu.ethereum.eth.sync.state.SyncState;
 import org.hyperledger.besu.ethereum.eth.sync.state.SyncTarget;
-import org.hyperledger.besu.ethereum.mainnet.BodyValidationMode;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.metrics.BesuMetricCategory;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
@@ -113,15 +114,12 @@ public class FastSyncDownloadPipelineFactory implements DownloadPipelineFactory 
   }
 
   @Override
-  public Pipeline<SyncTargetRange> createDownloadPipelineForSyncTarget(final SyncTarget target) {
-
+  public Pipeline<SyncTargetRange> createDownloadPipelineForSyncTarget(
+      final SyncState syncState, final SyncTarget target) {
     final int downloaderParallelism = syncConfig.getDownloaderParallelism();
     final int headerRequestSize = syncConfig.getDownloaderHeaderRequestSize();
     final int singleHeaderBufferSize = headerRequestSize * downloaderParallelism;
-    final BodyValidationMode bodyValidationMode =
-        protocolSchedule.anyMatch(scheduledProtocolSpec -> scheduledProtocolSpec.spec().isPoS())
-            ? BodyValidationMode.NONE
-            : BodyValidationMode.LIGHT;
+
     final SyncTargetRangeSource checkpointRangeSource =
         new SyncTargetRangeSource(
             new RangeHeadersFetcher(
@@ -138,14 +136,18 @@ public class FastSyncDownloadPipelineFactory implements DownloadPipelineFactory 
             protocolContext,
             ethContext,
             detachedValidationPolicy,
+            syncConfig,
             headerRequestSize,
             metricsSystem);
     final RangeHeadersValidationStep validateHeadersJoinUpStep =
         new RangeHeadersValidationStep(protocolSchedule, protocolContext, detachedValidationPolicy);
+    final SavePreMergeHeadersStep savePreMergeHeadersStep =
+        new SavePreMergeHeadersStep(
+            protocolContext.getBlockchain(), getMergeHeaderBlockNumber(syncState));
     final DownloadBodiesStep downloadBodiesStep =
-        new DownloadBodiesStep(protocolSchedule, ethContext, metricsSystem);
+        new DownloadBodiesStep(protocolSchedule, ethContext, syncConfig, metricsSystem);
     final DownloadReceiptsStep downloadReceiptsStep =
-        new DownloadReceiptsStep(ethContext, metricsSystem);
+        new DownloadReceiptsStep(protocolSchedule, ethContext, syncConfig, metricsSystem);
     final ImportBlocksStep importBlockStep =
         new ImportBlocksStep(
             protocolSchedule,
@@ -154,7 +156,7 @@ public class FastSyncDownloadPipelineFactory implements DownloadPipelineFactory 
             ommerValidationPolicy,
             ethContext,
             fastSyncState.getPivotBlockHeader().get(),
-            bodyValidationMode);
+            syncConfig.getSnapSyncConfiguration().isSnapSyncTransactionIndexingEnabled());
 
     return PipelineBuilder.createPipelineFrom(
             "fetchCheckpoints",
@@ -170,6 +172,7 @@ public class FastSyncDownloadPipelineFactory implements DownloadPipelineFactory 
             "fastSync")
         .thenProcessAsyncOrdered("downloadHeaders", downloadHeadersStep, downloaderParallelism)
         .thenFlatMap("validateHeadersJoin", validateHeadersJoinUpStep, singleHeaderBufferSize)
+        .thenFlatMap("savePreMergeHeadersStep", savePreMergeHeadersStep, singleHeaderBufferSize)
         .inBatches(headerRequestSize)
         .thenProcessAsyncOrdered("downloadBodies", downloadBodiesStep, downloaderParallelism)
         .thenProcessAsyncOrdered("downloadReceipts", downloadReceiptsStep, downloaderParallelism)
@@ -196,5 +199,11 @@ public class FastSyncDownloadPipelineFactory implements DownloadPipelineFactory 
           peer);
     }
     return shouldContinue;
+  }
+
+  private long getMergeHeaderBlockNumber(final SyncState syncState) {
+    return syncConfig.isSnapSyncSavePreMergeHeadersOnlyEnabled()
+        ? syncState.getCheckpoint().map(Checkpoint::blockNumber).orElse(0L)
+        : 0L;
   }
 }

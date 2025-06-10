@@ -31,8 +31,7 @@ import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
 import org.hyperledger.besu.ethereum.core.MilestoneStreamingProtocolSchedule;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
-import org.hyperledger.besu.ethereum.core.PrivacyParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.BlockHeaderValidator;
 import org.hyperledger.besu.ethereum.mainnet.DefaultProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
@@ -241,11 +240,10 @@ public class BaseBftProtocolScheduleBuilderTest {
     return bftProtocolSchedule.createProtocolSchedule(
         genesisConfig,
         new ForksSchedule<>(forks),
-        PrivacyParameters.DEFAULT,
         false,
         bftExtraDataCodec,
         EvmConfiguration.DEFAULT,
-        MiningParameters.MINING_DISABLED,
+        MiningConfiguration.MINING_DISABLED,
         new BadBlockManager(),
         false,
         new NoOpMetricsSystem());

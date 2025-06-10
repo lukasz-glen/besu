@@ -61,7 +61,8 @@ public class ClassicProtocolSpecs {
     return MainnetProtocolSpecs.homesteadDefinition(
             evmConfiguration, isParallelTxProcessingEnabled, metricsSystem)
         .blockHeaderValidatorBuilder(
-            feeMarket -> MainnetBlockHeaderValidator.createClassicValidator())
+            (feeMarket, gasCalculator, gasLimitCalculator) ->
+                MainnetBlockHeaderValidator.createClassicValidator())
         .name("ClassicRecoveryInit");
   }
 
@@ -175,16 +176,17 @@ public class ClassicProtocolSpecs {
                 transactionValidatorFactory,
                 contractCreationProcessor,
                 messageCallProcessor) ->
-                new MainnetTransactionProcessor(
-                    gasCalculator,
-                    transactionValidatorFactory,
-                    contractCreationProcessor,
-                    messageCallProcessor,
-                    true,
-                    false,
-                    evmConfiguration.evmStackSize(),
-                    feeMarket,
-                    CoinbaseFeePriceCalculator.frontier()))
+                MainnetTransactionProcessor.builder()
+                    .gasCalculator(gasCalculator)
+                    .transactionValidatorFactory(transactionValidatorFactory)
+                    .contractCreationProcessor(contractCreationProcessor)
+                    .messageCallProcessor(messageCallProcessor)
+                    .clearEmptyAccounts(true)
+                    .warmCoinbase(false)
+                    .maxStackSize(evmConfiguration.evmStackSize())
+                    .feeMarket(feeMarket)
+                    .coinbaseFeePriceCalculator(CoinbaseFeePriceCalculator.frontier())
+                    .build())
         .name("Atlantis");
   }
 
@@ -247,11 +249,11 @@ public class ClassicProtocolSpecs {
             isParallelTxProcessingEnabled,
             metricsSystem)
         .blockHeaderValidatorBuilder(
-            feeMarket ->
+            (feeMarket, gasCalculator, gasLimitCalculator) ->
                 MainnetBlockHeaderValidator.createPgaBlockHeaderValidator(
                     new EpochCalculator.Ecip1099EpochCalculator(), powHasher(PowAlgorithm.ETHASH)))
         .ommerHeaderValidatorBuilder(
-            feeMarket ->
+            (feeMarket, gasCalculator, gasLimitCalculator) ->
                 MainnetBlockHeaderValidator.createLegacyFeeMarketOmmerValidator(
                     new EpochCalculator.Ecip1099EpochCalculator(), powHasher(PowAlgorithm.ETHASH)))
         .name("Thanos");
@@ -357,16 +359,17 @@ public class ClassicProtocolSpecs {
                 transactionValidatorFactory,
                 contractCreationProcessor,
                 messageCallProcessor) ->
-                new MainnetTransactionProcessor(
-                    gasCalculator,
-                    transactionValidatorFactory,
-                    contractCreationProcessor,
-                    messageCallProcessor,
-                    true,
-                    true,
-                    evmConfiguration.evmStackSize(),
-                    feeMarket,
-                    CoinbaseFeePriceCalculator.frontier()))
+                MainnetTransactionProcessor.builder()
+                    .gasCalculator(gasCalculator)
+                    .transactionValidatorFactory(transactionValidatorFactory)
+                    .contractCreationProcessor(contractCreationProcessor)
+                    .messageCallProcessor(messageCallProcessor)
+                    .clearEmptyAccounts(true)
+                    .warmCoinbase(true)
+                    .maxStackSize(evmConfiguration.evmStackSize())
+                    .feeMarket(feeMarket)
+                    .coinbaseFeePriceCalculator(CoinbaseFeePriceCalculator.frontier())
+                    .build())
         .name("Spiral");
   }
 }

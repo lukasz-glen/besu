@@ -44,13 +44,10 @@ public class CancunGasCalculator extends ShanghaiGasCalculator {
   private static final long TSTORE_GAS = WARM_STORAGE_READ_COST;
 
   /**
-   * The blob gas cost per blob. This is the gas cost for each blob of blob that is added to the
-   * block.
+   * The blob gas cost per blob. This is the gas cost for each blob of data that is added to the
+   * block. 1 << 17 = 131072 = 0x20000
    */
-  public static final long BLOB_GAS_PER_BLOB = 1 << 17;
-
-  /** The target blob gas per block. */
-  public static final long TARGET_BLOB_GAS_PER_BLOCK = 0x60000;
+  private static final long BLOB_GAS_PER_BLOB = 1 << 17;
 
   // EIP-1153
   @Override
@@ -64,47 +61,12 @@ public class CancunGasCalculator extends ShanghaiGasCalculator {
   }
 
   @Override
-  public long blobGasCost(final int blobCount) {
-    return BLOB_GAS_PER_BLOB * blobCount;
-  }
-
-  /**
-   * Retrieves the target blob gas per block.
-   *
-   * @return The target blob gas per block.
-   */
-  public long getTargetBlobGasPerBlock() {
-    return TARGET_BLOB_GAS_PER_BLOCK;
-  }
-
-  /**
-   * Computes the excess blob gas for a given block based on the parent's excess blob gas and blob
-   * gas used. If the sum of parent's excess blob gas and parent's blob gas used is less than the
-   * target blob gas per block, the excess blob gas is calculated as 0. Otherwise, it is computed as
-   * the difference between the sum and the target blob gas per block.
-   *
-   * @param parentExcessBlobGas The excess blob gas of the parent block.
-   * @param newBlobs blob gas incurred by current block
-   * @return The excess blob gas for the current block.
-   */
-  @Override
-  public long computeExcessBlobGas(final long parentExcessBlobGas, final int newBlobs) {
-    final long consumedBlobGas = blobGasCost(newBlobs);
-    final long currentExcessBlobGas = parentExcessBlobGas + consumedBlobGas;
-
-    if (currentExcessBlobGas < TARGET_BLOB_GAS_PER_BLOCK) {
-      return 0L;
-    }
-    return currentExcessBlobGas - TARGET_BLOB_GAS_PER_BLOCK;
+  public long blobGasCost(final long blobCount) {
+    return getBlobGasPerBlob() * blobCount;
   }
 
   @Override
-  public long computeExcessBlobGas(final long parentExcessBlobGas, final long parentBlobGasUsed) {
-    final long currentExcessBlobGas = parentExcessBlobGas + parentBlobGasUsed;
-
-    if (currentExcessBlobGas < TARGET_BLOB_GAS_PER_BLOCK) {
-      return 0L;
-    }
-    return currentExcessBlobGas - TARGET_BLOB_GAS_PER_BLOCK;
+  public long getBlobGasPerBlob() {
+    return BLOB_GAS_PER_BLOB;
   }
 }

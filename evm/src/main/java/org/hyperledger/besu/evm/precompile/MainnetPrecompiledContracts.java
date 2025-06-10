@@ -78,7 +78,8 @@ public interface MainnetPrecompiledContracts {
       final PrecompileContractRegistry registry, final GasCalculator gasCalculator) {
     populateForFrontier(registry, gasCalculator);
     registry.put(
-        Address.MODEXP, new BigIntegerModularExponentiationPrecompiledContract(gasCalculator));
+        Address.MODEXP,
+        BigIntegerModularExponentiationPrecompiledContract.byzantium(gasCalculator));
     registry.put(Address.ALTBN128_ADD, AltBN128AddPrecompiledContract.byzantium(gasCalculator));
     registry.put(Address.ALTBN128_MUL, AltBN128MulPrecompiledContract.byzantium(gasCalculator));
     registry.put(
@@ -164,14 +165,39 @@ public interface MainnetPrecompiledContracts {
 
     // EIP-2537 - BLS12-381 curve operations
     registry.put(Address.BLS12_G1ADD, new BLS12G1AddPrecompiledContract());
-    registry.put(Address.BLS12_G1MUL, new BLS12G1MulPrecompiledContract());
     registry.put(Address.BLS12_G1MULTIEXP, new BLS12G1MultiExpPrecompiledContract());
     registry.put(Address.BLS12_G2ADD, new BLS12G2AddPrecompiledContract());
-    registry.put(Address.BLS12_G2MUL, new BLS12G2MulPrecompiledContract());
     registry.put(Address.BLS12_G2MULTIEXP, new BLS12G2MultiExpPrecompiledContract());
     registry.put(Address.BLS12_PAIRING, new BLS12PairingPrecompiledContract());
     registry.put(Address.BLS12_MAP_FP_TO_G1, new BLS12MapFpToG1PrecompiledContract());
     registry.put(Address.BLS12_MAP_FP2_TO_G2, new BLS12MapFp2ToG2PrecompiledContract());
+  }
+
+  /**
+   * Osaka precompile contract registry.
+   *
+   * @param gasCalculator the gas calculator
+   * @return the precompile contract registry
+   */
+  static PrecompileContractRegistry osaka(final GasCalculator gasCalculator) {
+    PrecompileContractRegistry precompileContractRegistry = new PrecompileContractRegistry();
+    populateForOsaka(precompileContractRegistry, gasCalculator);
+    return precompileContractRegistry;
+  }
+
+  /**
+   * Populate registry for Osaka.
+   *
+   * @param registry the registry
+   * @param gasCalculator the gas calculator
+   */
+  static void populateForOsaka(
+      final PrecompileContractRegistry registry, final GasCalculator gasCalculator) {
+    populateForPrague(registry, gasCalculator);
+
+    // EIP-7823 - Set upper bounds for MODEXP
+    registry.put(
+        Address.MODEXP, BigIntegerModularExponentiationPrecompiledContract.osaka(gasCalculator));
   }
 
   /**

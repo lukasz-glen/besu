@@ -1,5 +1,5 @@
 /*
- * Copyright ConsenSys AG.
+ * Copyright contributors to Hyperledger Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -26,22 +26,23 @@ import org.hyperledger.besu.crypto.SignatureAlgorithm;
 import org.hyperledger.besu.crypto.SignatureAlgorithmFactory;
 import org.hyperledger.besu.datatypes.AccessListEntry;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.datatypes.Blob;
-import org.hyperledger.besu.datatypes.BlobsWithCommitments;
+import org.hyperledger.besu.datatypes.BlobType;
 import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Hash;
-import org.hyperledger.besu.datatypes.KZGCommitment;
-import org.hyperledger.besu.datatypes.KZGProof;
 import org.hyperledger.besu.datatypes.Sha256Hash;
 import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.VersionedHash;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.core.encoding.AccessListTransactionEncoder;
 import org.hyperledger.besu.ethereum.core.encoding.BlobTransactionEncoder;
-import org.hyperledger.besu.ethereum.core.encoding.CodeDelegationEncoder;
+import org.hyperledger.besu.ethereum.core.encoding.CodeDelegationTransactionEncoder;
 import org.hyperledger.besu.ethereum.core.encoding.EncodingContext;
 import org.hyperledger.besu.ethereum.core.encoding.TransactionDecoder;
 import org.hyperledger.besu.ethereum.core.encoding.TransactionEncoder;
+import org.hyperledger.besu.ethereum.core.kzg.Blob;
+import org.hyperledger.besu.ethereum.core.kzg.BlobsWithCommitments;
+import org.hyperledger.besu.ethereum.core.kzg.KZGCommitment;
+import org.hyperledger.besu.ethereum.core.kzg.KZGProof;
 import org.hyperledger.besu.ethereum.rlp.BytesValueRLPOutput;
 import org.hyperledger.besu.ethereum.rlp.RLP;
 import org.hyperledger.besu.ethereum.rlp.RLPInput;
@@ -99,7 +100,7 @@ public class Transaction
 
   private final SECPSignature signature;
 
-  private final Bytes payload;
+  private final Payload payload;
 
   private final Optional<List<AccessListEntry>> maybeAccessList;
 
@@ -126,6 +127,8 @@ public class Transaction
   private final Optional<BlobsWithCommitments> blobsWithCommitments;
   private final Optional<List<CodeDelegation>> maybeCodeDelegationList;
 
+  private final Optional<Bytes> rawRlp;
+
   public static Builder builder() {
     return new Builder();
   }
@@ -134,8 +137,25 @@ public class Transaction
     return readFrom(RLP.input(rlpBytes));
   }
 
+  /**
+   * Recreate a transaction from RLP serialized in the block body format
+   *
+   * @param rlpInput the RLP input in block body format
+   * @return the transaction
+   */
   public static Transaction readFrom(final RLPInput rlpInput) {
-    return TransactionDecoder.decodeRLP(rlpInput, EncodingContext.BLOCK_BODY);
+    return readFrom(rlpInput, EncodingContext.BLOCK_BODY);
+  }
+
+  /**
+   * Recreate a transaction from RLP serialized according to the specified format
+   *
+   * @param rlpInput the RLP input in block body format
+   * @param context specify in which format the RLP was serialized
+   * @return the transaction
+   */
+  public static Transaction readFrom(final RLPInput rlpInput, final EncodingContext context) {
+    return TransactionDecoder.decodeRLP(rlpInput, context);
   }
 
   /**
@@ -175,13 +195,14 @@ public class Transaction
       final Optional<Address> to,
       final Wei value,
       final SECPSignature signature,
-      final Bytes payload,
+      final Payload payload,
       final Optional<List<AccessListEntry>> maybeAccessList,
       final Address sender,
       final Optional<BigInteger> chainId,
       final Optional<List<VersionedHash>> versionedHashes,
       final Optional<BlobsWithCommitments> blobsWithCommitments,
-      final Optional<List<CodeDelegation>> maybeCodeDelegationList) {
+      final Optional<List<CodeDelegation>> maybeCodeDelegationList,
+      final Optional<Bytes> rawRlp) {
 
     if (!forCopy) {
       if (transactionType.requiresChainId()) {
@@ -242,6 +263,7 @@ public class Transaction
     this.versionedHashes = versionedHashes;
     this.blobsWithCommitments = blobsWithCommitments;
     this.maybeCodeDelegationList = maybeCodeDelegationList;
+    this.rawRlp = rawRlp;
   }
 
   /**
@@ -378,7 +400,12 @@ public class Transaction
    */
   @Override
   public Bytes getPayload() {
-    return payload;
+    return payload.getPayloadBytes();
+  }
+
+  @Override
+  public long getPayloadZeroBytes() {
+    return payload.getZeroBytesCount();
   }
 
   /**
@@ -388,7 +415,7 @@ public class Transaction
    */
   @Override
   public Optional<Bytes> getInit() {
-    return getTo().isPresent() ? Optional.empty() : Optional.of(payload);
+    return getTo().isPresent() ? Optional.empty() : Optional.of(payload.getPayloadBytes());
   }
 
   /**
@@ -398,7 +425,7 @@ public class Transaction
    */
   @Override
   public Optional<Bytes> getData() {
-    return getTo().isPresent() ? Optional.of(payload) : Optional.empty();
+    return getTo().isPresent() ? Optional.of(payload.getPayloadBytes()) : Optional.empty();
   }
 
   @Override
@@ -480,12 +507,22 @@ public class Transaction
   }
 
   /**
-   * Writes the transaction to RLP
+   * Writes the transaction to RLP using the block body format
    *
    * @param out the output to write the transaction to
    */
   public void writeTo(final RLPOutput out) {
-    TransactionEncoder.encodeRLP(this, out, EncodingContext.BLOCK_BODY);
+    writeTo(out, EncodingContext.BLOCK_BODY);
+  }
+
+  /**
+   * Writes the transaction to RLP using the specified format
+   *
+   * @param out the output to write the transaction to
+   * @param context the serialization format to use
+   */
+  public void writeTo(final RLPOutput out, final EncodingContext context) {
+    TransactionEncoder.encodeRLP(this, out, context);
   }
 
   @Override
@@ -567,11 +604,7 @@ public class Transaction
     size = bytes.size();
   }
 
-  /**
-   * Returns whether the transaction is a contract creation
-   *
-   * @return {@code true} if this is a contract-creation transaction; otherwise {@code false}
-   */
+  @Override
   public boolean isContractCreation() {
     return getTo().isEmpty();
   }
@@ -665,6 +698,10 @@ public class Transaction
     return getEffectivePriorityFeePerGas(baseFeePerGas).addExact(baseFeePerGas.orElse(Wei.ZERO));
   }
 
+  public Optional<Bytes> getRawRlp() {
+    return rawRlp;
+  }
+
   @Override
   public TransactionType getType() {
     return this.transactionType;
@@ -711,7 +748,7 @@ public class Transaction
       final long gasLimit,
       final Optional<Address> to,
       final Wei value,
-      final Bytes payload,
+      final Payload payload,
       final Optional<List<AccessListEntry>> accessList,
       final List<VersionedHash> versionedHashes,
       final Optional<List<CodeDelegation>> codeDelegationList,
@@ -719,6 +756,59 @@ public class Transaction
     if (transactionType.requiresChainId()) {
       checkArgument(chainId.isPresent(), "Transaction type %s requires chainId", transactionType);
     }
+    final Bytes preimage =
+        getPreimage(
+            transactionType,
+            nonce,
+            gasPrice,
+            maxPriorityFeePerGas,
+            maxFeePerGas,
+            maxFeePerBlobGas,
+            gasLimit,
+            to,
+            value,
+            payload.getPayloadBytes(),
+            accessList,
+            versionedHashes,
+            codeDelegationList,
+            chainId);
+    return keccak256(preimage);
+  }
+
+  @Override
+  public Bytes encodedPreimage() {
+    return getPreimage(
+        transactionType,
+        nonce,
+        gasPrice.orElse(null),
+        maxPriorityFeePerGas.orElse(null),
+        maxFeePerGas.orElse(null),
+        maxFeePerBlobGas.orElse(null),
+        gasLimit,
+        to,
+        value,
+        payload.getPayloadBytes(),
+        maybeAccessList,
+        versionedHashes.orElse(null),
+        maybeCodeDelegationList,
+        chainId);
+  }
+
+  private static Bytes getPreimage(
+      final TransactionType transactionType,
+      final long nonce,
+      final Wei gasPrice,
+      final Wei maxPriorityFeePerGas,
+      final Wei maxFeePerGas,
+      final Wei maxFeePerBlobGas,
+      final long gasLimit,
+      final Optional<Address> to,
+      final Wei value,
+      final Bytes payload,
+      final Optional<List<AccessListEntry>> accessList,
+      final List<VersionedHash> versionedHashes,
+      final Optional<List<CodeDelegation>> codeDelegationList,
+      final Optional<BigInteger> chainId) {
     final Bytes preimage =
         switch (transactionType) {
           case FRONTIER -> frontierPreimage(nonce, gasPrice, gasLimit, to, value, payload, chainId);
@@ -775,7 +865,7 @@ public class Transaction
                           new IllegalStateException(
                               "Developer error: the transaction should be guaranteed to have a code delegations here")));
         };
-    return keccak256(preimage);
+    return preimage;
   }
 
   private static Bytes frontierPreimage(
@@ -937,7 +1027,8 @@ public class Transaction
                   chainId,
                   accessList,
                   rlpOutput);
-              CodeDelegationEncoder.encodeCodeDelegationInner(authorizationList, rlpOutput);
+              CodeDelegationTransactionEncoder.encodeCodeDelegationInner(
+                  authorizationList, rlpOutput);
               rlpOutput.endList();
             });
     return Bytes.concatenate(Bytes.of(TransactionType.DELEGATE_CODE.getSerializedType()), encoded);
@@ -973,7 +1064,7 @@ public class Transaction
         gasLimit,
         to,
         value,
-        payload,
+        payload.getPayloadBytes(),
         signature,
         chainId);
   }
@@ -1071,7 +1162,7 @@ public class Transaction
    * Creates a copy of this transaction that does not share any underlying byte array.
    *
    * <p>This is useful in case the transaction is built from a block body and fields, like to or
-   * payload, are wrapping (and so keeping references) sections of the large RPL encoded block body,
+   * payload, are wrapping (and so keeping references) sections of the large RLP encoded block body,
    * and we plan to keep the transaction around for some time, like in the txpool in case of a
    * reorg, and do not want to keep all the block body in memory for a long time, but only the
    * actual transaction.
@@ -1091,6 +1182,10 @@ public class Transaction
         blobsWithCommitments.map(
             withCommitments ->
                 blobsWithCommitmentsDetachedCopy(withCommitments, detachedVersionedHashes.get()));
+    final Optional<List<CodeDelegation>> detachedCodeDelegationList =
+        maybeCodeDelegationList.map(
+            codeDelegations ->
+                codeDelegations.stream().map(this::codeDelegationDetachedCopy).toList());
 
     final var copiedTx =
         new Transaction(
@@ -1105,13 +1200,14 @@ public class Transaction
             detachedTo,
             value,
             signature,
-            payload.copy(),
+            payload,
             detachedAccessList,
             sender,
             chainId,
             detachedVersionedHashes,
             detachedBlobsWithCommitments,
-            maybeCodeDelegationList);
+            detachedCodeDelegationList,
+            Optional.empty());
 
     // copy also the computed fields, to avoid to recompute them
     copiedTx.sender = this.sender;
@@ -1128,6 +1224,15 @@ public class Transaction
     return new AccessListEntry(detachedAddress, detachedStorage);
   }
 
+  private CodeDelegation codeDelegationDetachedCopy(final CodeDelegation codeDelegation) {
+    final Address detachedAddress = Address.wrap(codeDelegation.address().copy());
+    return new org.hyperledger.besu.ethereum.core.CodeDelegation(
+        codeDelegation.chainId(),
+        detachedAddress,
+        codeDelegation.nonce(),
+        codeDelegation.signature());
+  }
+
   private BlobsWithCommitments blobsWithCommitmentsDetachedCopy(
       final BlobsWithCommitments blobsWithCommitments, final List<VersionedHash> versionedHashes) {
     final var detachedCommitments =
@@ -1142,9 +1247,12 @@ public class Transaction
         blobsWithCommitments.getKzgProofs().stream()
             .map(proof -> new KZGProof(proof.getData().copy()))
             .toList();
-
     return new BlobsWithCommitments(
-        detachedCommitments, detachedBlobs, detachedProofs, versionedHashes);
+        blobsWithCommitments.getBlobType(),
+        detachedCommitments,
+        detachedBlobs,
+        detachedProofs,
+        versionedHashes);
   }
 
   public static class Builder {
@@ -1169,7 +1277,7 @@ public class Transaction
 
     protected SECPSignature signature;
 
-    protected Bytes payload;
+    protected Payload payload;
 
     protected Optional<List<AccessListEntry>> accessList = Optional.empty();
 
@@ -1180,6 +1288,7 @@ public class Transaction
     protected List<VersionedHash> versionedHashes = null;
     private BlobsWithCommitments blobsWithCommitments;
     protected Optional<List<CodeDelegation>> codeDelegationAuthorizations = Optional.empty();
+    protected Bytes rawRlp = null;
 
     public Builder copiedFrom(final Transaction toCopy) {
       this.transactionType = toCopy.transactionType;
@@ -1258,7 +1367,7 @@ public class Transaction
     }
 
     public Builder payload(final Bytes payload) {
-      this.payload = payload;
+      this.payload = new Payload(payload);
       return this;
     }
 
@@ -1285,15 +1394,20 @@ public class Transaction
       return this;
     }
 
+    public Builder rawRlp(final Bytes rawRlp) {
+      this.rawRlp = rawRlp;
+      return this;
+    }
+
     public Builder guessType() {
-      if (versionedHashes != null && !versionedHashes.isEmpty()) {
+      if (codeDelegationAuthorizations.isPresent()) {
+        transactionType = TransactionType.DELEGATE_CODE;
+      } else if (versionedHashes != null && !versionedHashes.isEmpty()) {
         transactionType = TransactionType.BLOB;
       } else if (maxPriorityFeePerGas != null || maxFeePerGas != null) {
         transactionType = TransactionType.EIP1559;
       } else if (accessList.isPresent()) {
         transactionType = TransactionType.ACCESS_LIST;
-      } else if (codeDelegationAuthorizations.isPresent()) {
-        transactionType = TransactionType.DELEGATE_CODE;
       } else {
         transactionType = TransactionType.FRONTIER;
       }
@@ -1324,7 +1438,8 @@ public class Transaction
           chainId,
           Optional.ofNullable(versionedHashes),
           Optional.ofNullable(blobsWithCommitments),
-          codeDelegationAuthorizations);
+          codeDelegationAuthorizations,
+          Optional.ofNullable(rawRlp));
     }
 
     public Transaction signAndBuild(final KeyPair keys) {
@@ -1357,6 +1472,7 @@ public class Transaction
     }
 
     public Builder kzgBlobs(
+        final BlobType blobType,
         final List<KZGCommitment> kzgCommitments,
         final List<Blob> blobs,
         final List<KZGProof> kzgProofs) {
@@ -1367,7 +1483,7 @@ public class Transaction
                 .toList();
       }
       this.blobsWithCommitments =
-          new BlobsWithCommitments(kzgCommitments, blobs, kzgProofs, versionedHashes);
+          new BlobsWithCommitments(blobType, kzgCommitments, blobs, kzgProofs, versionedHashes);
       return this;
     }
 

@@ -39,10 +39,10 @@ import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.chain.Blockchain;
 import org.hyperledger.besu.ethereum.chain.ChainHead;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.proof.WorldStateProof;
-import org.hyperledger.besu.ethereum.worldstate.StateTrieAccountValue;
+import org.hyperledger.besu.ethereum.trie.common.PmtStateTrieAccountValue;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateArchive;
 
 import java.util.Collections;
@@ -82,6 +82,8 @@ class EthGetProofTest {
       Address.fromHexString("0x1234567890123456789012345678901234567890");
   private final UInt256 storageKey =
       UInt256.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000001");
+  private final String storageKeyShortened =
+      "0x01"; // shortened form of storageKey used in json output
   private final long blockNumber = 1;
 
   @BeforeEach
@@ -89,7 +91,7 @@ class EthGetProofTest {
     blockchainQueries =
         spy(
             new BlockchainQueries(
-                protocolSchedule, blockchain, archive, MiningParameters.newDefault()));
+                protocolSchedule, blockchain, archive, MiningConfiguration.newDefault()));
     when(blockchainQueries.getBlockchain()).thenReturn(blockchain);
     when(blockchainQueries.headBlockNumber()).thenReturn(14L);
     when(blockchain.getChainHead()).thenReturn(chainHead);
@@ -169,7 +171,6 @@ class EthGetProofTest {
 
   @Test
   void getProof() {
-
     final GetProofResult expectedResponse = generateWorldState();
 
     final JsonRpcRequestContext request =
@@ -183,8 +184,7 @@ class EthGetProofTest {
     assertThat(result).usingRecursiveComparison().isEqualTo(expectedResponse);
     assertThat(result.getNonce()).isEqualTo("0xfffffffffffffffe");
     assertThat(result.getStorageProof().size()).isGreaterThan(0);
-    assertThat(result.getStorageProof().get(0).getKey())
-        .isEqualTo(storageKey.trimLeadingZeros().toHexString());
+    assertThat(result.getStorageProof().get(0).getKey()).isEqualTo(storageKeyShortened);
   }
 
   private JsonRpcRequestContext requestWithParams(final Object... params) {
@@ -202,7 +202,7 @@ class EthGetProofTest {
 
     when(blockchainQueries.getWorldStateArchive()).thenReturn(archive);
 
-    final StateTrieAccountValue stateTrieAccountValue = mock(StateTrieAccountValue.class);
+    final PmtStateTrieAccountValue stateTrieAccountValue = mock(PmtStateTrieAccountValue.class);
     when(stateTrieAccountValue.getBalance()).thenReturn(balance);
     when(stateTrieAccountValue.getCodeHash()).thenReturn(codeHash);
     when(stateTrieAccountValue.getNonce()).thenReturn(nonce);

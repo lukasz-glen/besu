@@ -1,5 +1,5 @@
 /*
- * Copyright ConsenSys AG.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -36,8 +36,7 @@ import org.hyperledger.besu.ethereum.api.tls.SelfSignedP12Certificate;
 import org.hyperledger.besu.ethereum.api.tls.TlsConfiguration;
 import org.hyperledger.besu.ethereum.blockcreation.PoWMiningCoordinator;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
-import org.hyperledger.besu.ethereum.core.PrivacyParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.eth.EthProtocol;
 import org.hyperledger.besu.ethereum.eth.manager.EthPeers;
@@ -47,9 +46,11 @@ import org.hyperledger.besu.ethereum.p2p.network.P2PNetwork;
 import org.hyperledger.besu.ethereum.p2p.rlpx.wire.Capability;
 import org.hyperledger.besu.ethereum.permissioning.AccountLocalConfigPermissioningController;
 import org.hyperledger.besu.ethereum.permissioning.NodeLocalConfigPermissioningController;
+import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
 import org.hyperledger.besu.nat.NatService;
+import org.hyperledger.besu.testutil.DeterministicEthScheduler;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -99,8 +100,7 @@ class JsonRpcHttpServiceTlsMisconfigurationTest {
     final Synchronizer synchronizer = mock(Synchronizer.class);
 
     final Set<Capability> supportedCapabilities = new HashSet<>();
-    supportedCapabilities.add(EthProtocol.ETH62);
-    supportedCapabilities.add(EthProtocol.ETH63);
+    supportedCapabilities.add(EthProtocol.LATEST);
 
     rpcMethods =
         new JsonRpcMethodsFactory()
@@ -115,21 +115,20 @@ class JsonRpcHttpServiceTlsMisconfigurationTest {
                 synchronizer,
                 MainnetProtocolSchedule.fromConfig(
                     new StubGenesisConfigOptions().constantinopleBlock(0).chainId(CHAIN_ID),
-                    MiningParameters.MINING_DISABLED,
+                    MiningConfiguration.MINING_DISABLED,
                     new BadBlockManager(),
                     false,
                     new NoOpMetricsSystem()),
                 mock(ProtocolContext.class),
                 mock(FilterManager.class),
                 mock(TransactionPool.class),
-                mock(MiningParameters.class),
+                mock(MiningConfiguration.class),
                 mock(PoWMiningCoordinator.class),
                 new NoOpMetricsSystem(),
                 supportedCapabilities,
                 Optional.of(mock(AccountLocalConfigPermissioningController.class)),
                 Optional.of(mock(NodeLocalConfigPermissioningController.class)),
                 DEFAULT_RPC_APIS,
-                mock(PrivacyParameters.class),
                 mock(JsonRpcConfiguration.class),
                 mock(WebSocketConfiguration.class),
                 mock(MetricsConfiguration.class),
@@ -140,7 +139,9 @@ class JsonRpcHttpServiceTlsMisconfigurationTest {
                 mock(EthPeers.class),
                 vertx,
                 mock(ApiConfiguration.class),
-                Optional.empty());
+                Optional.empty(),
+                mock(TransactionSimulator.class),
+                new DeterministicEthScheduler());
   }
 
   @AfterEach

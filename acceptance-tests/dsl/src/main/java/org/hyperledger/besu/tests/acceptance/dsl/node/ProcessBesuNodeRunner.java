@@ -17,12 +17,11 @@ package org.hyperledger.besu.tests.acceptance.dsl.node;
 import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import org.hyperledger.besu.cli.options.DataStorageOptions;
+import org.hyperledger.besu.cli.options.NetworkingOptions;
 import org.hyperledger.besu.cli.options.TransactionPoolOptions;
-import org.hyperledger.besu.cli.options.unstable.NetworkingOptions;
+import org.hyperledger.besu.cli.options.storage.DataStorageOptions;
 import org.hyperledger.besu.ethereum.api.jsonrpc.ipc.JsonRpcIpcConfiguration;
 import org.hyperledger.besu.ethereum.eth.transactions.ImmutableTransactionPoolConfiguration;
-import org.hyperledger.besu.ethereum.p2p.rlpx.connections.netty.TLSConfiguration;
 import org.hyperledger.besu.ethereum.permissioning.PermissioningConfiguration;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategory;
@@ -49,6 +48,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,8 +153,20 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
       params.add(node.getNetwork().name());
     }
 
-    params.add("--sync-mode");
-    params.add("FULL");
+    if (node.getSynchronizerConfiguration() != null) {
+
+      if (node.getSynchronizerConfiguration().getSyncMode() != null) {
+        params.add("--sync-mode");
+        params.add(node.getSynchronizerConfiguration().getSyncMode().toString());
+      }
+      params.add("--sync-min-peers");
+      params.add(Integer.toString(node.getSynchronizerConfiguration().getSyncMinimumPeerCount()));
+    } else {
+      params.add("--sync-mode");
+      params.add("FULL");
+    }
+
+    params.add("--Xsnapsync-server-enabled");
 
     params.add("--discovery-enabled");
     params.add(Boolean.toString(node.isDiscoveryEnabled()));
@@ -179,6 +191,8 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
 
     if (node.getMiningParameters().isMiningEnabled()) {
       params.add("--miner-enabled");
+      params.add("--miner-extra-data");
+      params.add(node.getMiningParameters().getExtraData().toHexString());
       params.add("--miner-coinbase");
       params.add(node.getMiningParameters().getCoinbase().get().toString());
       params.add("--miner-stratum-port");
@@ -197,36 +211,6 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
     }
     if (node.getMiningParameters().isStratumMiningEnabled()) {
       params.add("--miner-stratum-enabled");
-    }
-
-    if (node.getPrivacyParameters().isEnabled()) {
-      params.add("--privacy-enabled");
-
-      params.add("--privacy-url");
-      params.add(node.getPrivacyParameters().getEnclaveUri().toString());
-
-      if (node.getPrivacyParameters().isMultiTenancyEnabled()) {
-        params.add("--privacy-multi-tenancy-enabled");
-      } else {
-        params.add("--privacy-public-key-file");
-        params.add(node.getPrivacyParameters().getEnclavePublicKeyFile().getAbsolutePath());
-      }
-
-      if (!node.getExtraCLIOptions().contains("--plugin-privacy-service-signing-enabled=true")) {
-        params.add("--privacy-marker-transaction-signing-key-file");
-        params.add(node.homeDirectory().resolve("key").toString());
-      }
-
-      if (node.getPrivacyParameters().isFlexiblePrivacyGroupsEnabled()) {
-        params.add("--privacy-flexible-groups-enabled");
-      }
-
-      if (node.getPrivacyParameters().isPrivacyPluginEnabled()) {
-        params.add("--Xprivacy-plugin-enabled");
-      }
-      if (node.getPrivacyParameters().isPrivateNonceAlwaysIncrementsEnabled()) {
-        params.add("privacy-nonce-always-increments");
-      }
     }
 
     if (!node.getBootnodes().isEmpty()) {
@@ -365,26 +349,6 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
       final List<String> networkConfigParams =
           NetworkingOptions.fromConfig(node.getNetworkingConfiguration()).getCLIOptions();
       params.addAll(networkConfigParams);
-      if (node.getTLSConfiguration().isPresent()) {
-        final TLSConfiguration config = node.getTLSConfiguration().get();
-        params.add("--Xp2p-tls-enabled");
-        params.add("--Xp2p-tls-keystore-type");
-        params.add(config.getKeyStoreType());
-        params.add("--Xp2p-tls-keystore-file");
-        params.add(config.getKeyStorePath().toAbsolutePath().toString());
-        params.add("--Xp2p-tls-keystore-password-file");
-        params.add(config.getKeyStorePasswordPath().toAbsolutePath().toString());
-        params.add("--Xp2p-tls-crl-file");
-        params.add(config.getCrlPath().toAbsolutePath().toString());
-        if (null != config.getTrustStoreType()) {
-          params.add("--Xp2p-tls-truststore-type");
-          params.add(config.getTrustStoreType());
-          params.add("--Xp2p-tls-truststore-file");
-          params.add(config.getTrustStorePath().toAbsolutePath().toString());
-          params.add("--Xp2p-tls-truststore-password-file");
-          params.add(config.getTrustStorePasswordPath().toAbsolutePath().toString());
-        }
-      }
     }
 
     if (node.isRevertReasonEnabled()) {
@@ -412,30 +376,6 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
                 params.add("--permissions-accounts-config-file");
                 params.add(permissioningConfiguration.getAccountPermissioningConfigFilePath());
               }
-            });
-
-    node.getPermissioningConfiguration()
-        .flatMap(PermissioningConfiguration::getSmartContractConfig)
-        .ifPresent(
-            permissioningConfiguration -> {
-              if (permissioningConfiguration.isSmartContractNodeAllowlistEnabled()) {
-                params.add("--permissions-nodes-contract-enabled");
-              }
-              if (permissioningConfiguration.getNodeSmartContractAddress() != null) {
-                params.add("--permissions-nodes-contract-address");
-                params.add(permissioningConfiguration.getNodeSmartContractAddress().toString());
-              }
-              if (permissioningConfiguration.isSmartContractAccountAllowlistEnabled()) {
-                params.add("--permissions-accounts-contract-enabled");
-              }
-              if (permissioningConfiguration.getAccountSmartContractAddress() != null) {
-                params.add("--permissions-accounts-contract-address");
-                params.add(permissioningConfiguration.getAccountSmartContractAddress().toString());
-              }
-              params.add("--permissions-nodes-contract-version");
-              params.add(
-                  String.valueOf(
-                      permissioningConfiguration.getNodeSmartContractInterfaceVersion()));
             });
 
     params.addAll(node.getExtraCLIOptions());
@@ -550,9 +490,11 @@ public class ProcessBesuNodeRunner implements BesuNodeRunner {
       return;
     }
 
-    LOG.info("Killing {} process, pid {}", name, process.pid());
-
-    process.destroy();
+    Stream.concat(process.descendants(), Stream.of(process.toHandle()))
+        .peek(
+            processHandle ->
+                LOG.info("Killing {} process, pid {}", processHandle.info(), processHandle.pid()))
+        .forEach(ProcessHandle::destroy);
     try {
       process.waitFor(30, TimeUnit.SECONDS);
     } catch (final InterruptedException e) {

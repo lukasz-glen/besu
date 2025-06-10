@@ -19,8 +19,7 @@ import org.hyperledger.besu.config.GenesisConfigOptions;
 import org.hyperledger.besu.consensus.common.ForksSchedule;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
-import org.hyperledger.besu.ethereum.core.PrivacyParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.BlockHeaderValidator;
 import org.hyperledger.besu.ethereum.mainnet.DefaultProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.MainnetBlockBodyValidator;
@@ -38,6 +37,7 @@ import org.hyperledger.besu.plugin.services.MetricsSystem;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 /** Defines the protocol behaviours for a blockchain using a BFT consensus mechanism. */
@@ -53,11 +53,10 @@ public abstract class BaseBftProtocolScheduleBuilder {
    *
    * @param config the config
    * @param forksSchedule the forks schedule
-   * @param privacyParameters the privacy parameters
    * @param isRevertReasonEnabled the is revert reason enabled
    * @param bftExtraDataCodec the bft extra data codec
    * @param evmConfiguration the evm configuration
-   * @param miningParameters the mining parameters
+   * @param miningConfiguration the mining parameters
    * @param badBlockManager the cache to use to keep invalid blocks
    * @param isParallelTxProcessingEnabled indicates whether parallel transaction is enabled.
    * @param metricsSystem metricsSystem A metricSystem instance to be able to expose metrics in the
@@ -67,11 +66,10 @@ public abstract class BaseBftProtocolScheduleBuilder {
   public BftProtocolSchedule createProtocolSchedule(
       final GenesisConfigOptions config,
       final ForksSchedule<? extends BftConfigOptions> forksSchedule,
-      final PrivacyParameters privacyParameters,
       final boolean isRevertReasonEnabled,
       final BftExtraDataCodec bftExtraDataCodec,
       final EvmConfiguration evmConfiguration,
-      final MiningParameters miningParameters,
+      final MiningConfiguration miningConfiguration,
       final BadBlockManager badBlockManager,
       final boolean isParallelTxProcessingEnabled,
       final MetricsSystem metricsSystem) {
@@ -90,12 +88,11 @@ public abstract class BaseBftProtocolScheduleBuilder {
     final ProtocolSchedule protocolSchedule =
         new ProtocolScheduleBuilder(
                 config,
-                DEFAULT_CHAIN_ID,
+                Optional.of(DEFAULT_CHAIN_ID),
                 specAdapters,
-                privacyParameters,
                 isRevertReasonEnabled,
                 evmConfiguration,
-                miningParameters,
+                miningConfiguration,
                 badBlockManager,
                 isParallelTxProcessingEnabled,
                 metricsSystem)
@@ -126,13 +123,15 @@ public abstract class BaseBftProtocolScheduleBuilder {
 
     return builder
         .blockHeaderValidatorBuilder(
-            feeMarket -> createBlockHeaderRuleset(configOptions, feeMarket))
+            (feeMarket, gasCalculator, gasLimitCalculator) ->
+                createBlockHeaderRuleset(configOptions, feeMarket))
         .ommerHeaderValidatorBuilder(
-            feeMarket -> createBlockHeaderRuleset(configOptions, feeMarket))
+            (feeMarket, gasCalculator, gasLimitCalculator) ->
+                createBlockHeaderRuleset(configOptions, feeMarket))
         .blockBodyValidatorBuilder(MainnetBlockBodyValidator::new)
         .blockValidatorBuilder(MainnetProtocolSpecs.blockValidatorBuilder())
         .blockImporterBuilder(MainnetBlockImporter::new)
-        .difficultyCalculator((time, parent, protocolContext) -> BigInteger.ONE)
+        .difficultyCalculator((time, parent) -> BigInteger.ONE)
         .skipZeroBlockRewards(true)
         .blockHeaderFunctions(BftBlockHeaderFunctions.forOnchainBlock(bftExtraDataCodec))
         .blockReward(Wei.of(configOptions.getBlockRewardWei()))

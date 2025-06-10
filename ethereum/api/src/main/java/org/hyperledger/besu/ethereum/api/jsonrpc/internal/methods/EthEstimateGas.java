@@ -14,20 +14,18 @@
  */
 package org.hyperledger.besu.ethereum.api.jsonrpc.internal.methods;
 
+import org.hyperledger.besu.ethereum.api.ApiConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.RpcMethod;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequestContext;
-import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.JsonCallParameter;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcErrorResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.RpcErrorType;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.results.Quantity;
 import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
-import org.hyperledger.besu.ethereum.core.BlockHeader;
-import org.hyperledger.besu.ethereum.mainnet.ImmutableTransactionValidationParams;
-import org.hyperledger.besu.ethereum.mainnet.TransactionValidationParams;
+import org.hyperledger.besu.ethereum.core.ProcessableBlockHeader;
 import org.hyperledger.besu.ethereum.transaction.CallParameter;
 import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.ethereum.transaction.TransactionSimulatorResult;
-import org.hyperledger.besu.evm.tracing.EstimateGasOperationTracer;
+import org.hyperledger.besu.evm.tracing.OperationTracer;
 
 import java.util.Optional;
 
@@ -36,10 +34,18 @@ import org.slf4j.LoggerFactory;
 
 public class EthEstimateGas extends AbstractEstimateGas {
   private static final Logger LOG = LoggerFactory.getLogger(EthEstimateGas.class);
+  private static final double SUB_CALL_REMAINING_GAS_RATIO = 64D / 63D;
+  // zero tolerance means there is no tolerance,
+  // which means keep looping until the estimate is exact (previous behavior)
+  protected double estimateGasToleranceRatio;
+  private static final long CALL_STIPEND = 2_300L;
 
   public EthEstimateGas(
-      final BlockchainQueries blockchainQueries, final TransactionSimulator transactionSimulator) {
+      final BlockchainQueries blockchainQueries,
+      final TransactionSimulator transactionSimulator,
+      final ApiConfiguration apiConfiguration) {
     super(blockchainQueries, transactionSimulator);
+    this.estimateGasToleranceRatio = apiConfiguration.getEstimateGasToleranceRatio();
   }
 
   @Override
@@ -48,27 +54,27 @@ public class EthEstimateGas extends AbstractEstimateGas {
   }
 
   @Override
-  protected Object resultByBlockHeader(
+  protected Object simulate(
       final JsonRpcRequestContext requestContext,
-      final JsonCallParameter callParams,
-      final BlockHeader blockHeader) {
+      final CallParameter callParams,
+      final ProcessableBlockHeader blockHeader,
+      final TransactionSimulationFunction simulationFunction,
+      final long gasLimitUpperBound,
+      final long minTxCost) {
 
-    final CallParameter modifiedCallParams =
-        overrideGasLimitAndPrice(callParams, blockHeader.getGasLimit());
+    LOG.debug(
+        "Processing transaction with tolerance {}; callParams: {}",
+        estimateGasToleranceRatio,
+        callParams);
 
-    final boolean isAllowExceedingBalance = !callParams.isMaybeStrict().orElse(Boolean.FALSE);
+    if (attemptOptimisticSimulationWithMinimumBlockGasUsed(
+        minTxCost, callParams, simulationFunction, OperationTracer.NO_TRACING)) {
+      return Quantity.create(minTxCost);
+    }
 
-    final EstimateGasOperationTracer operationTracer = new EstimateGasOperationTracer();
-    final var transactionValidationParams =
-        ImmutableTransactionValidationParams.builder()
-            .from(TransactionValidationParams.transactionSimulator())
-            .isAllowExceedingBalance(isAllowExceedingBalance)
-            .build();
-
-    LOG.debug("Processing transaction with params: {}", modifiedCallParams);
     final var maybeResult =
-        transactionSimulator.process(
-            modifiedCallParams, transactionValidationParams, operationTracer, blockHeader);
+        simulationFunction.simulate(
+            overrideGasLimit(callParams, gasLimitUpperBound), OperationTracer.NO_TRACING);
 
     final Optional<JsonRpcErrorResponse> maybeErrorResponse =
         validateSimulationResult(requestContext, maybeResult);
@@ -77,29 +83,32 @@ public class EthEstimateGas extends AbstractEstimateGas {
     }
 
     final var result = maybeResult.get();
-    long low = result.result().getEstimateGasUsedByTransaction();
-    final var lowResult =
-        transactionSimulator.process(
-            overrideGasLimitAndPrice(callParams, low),
-            transactionValidationParams,
-            operationTracer,
-            blockHeader);
-
-    if (lowResult.isPresent() && lowResult.get().isSuccessful()) {
-      return Quantity.create(low);
-    }
-
-    long high = processEstimateGas(result, operationTracer);
+    long high = gasLimitUpperBound;
     long mid;
 
+    long low = result.result().getEstimateGasUsedByTransaction() - 1;
+    var optimisticGasLimit = processEstimateGas(result);
+
+    final var optimisticResult =
+        simulationFunction.simulate(
+            overrideGasLimit(callParams, optimisticGasLimit), OperationTracer.NO_TRACING);
+
+    if (optimisticResult.isPresent() && optimisticResult.get().isSuccessful()) {
+      high = optimisticGasLimit;
+    } else {
+      low = optimisticGasLimit;
+    }
+
     while (low + 1 < high) {
+      // check if we are close enough
+      if (estimateGasToleranceRatio > 0
+          && (double) (high - low) / high < estimateGasToleranceRatio) {
+        break;
+      }
       mid = (low + high) / 2;
       var binarySearchResult =
-          transactionSimulator.process(
-              overrideGasLimitAndPrice(callParams, mid),
-              transactionValidationParams,
-              operationTracer,
-              blockHeader);
+          simulationFunction.simulate(
+              overrideGasLimit(callParams, mid), OperationTracer.NO_TRACING);
 
       if (binarySearchResult.isEmpty() || !binarySearchResult.get().isSuccessful()) {
         low = mid;
@@ -126,5 +135,18 @@ public class EthEstimateGas extends AbstractEstimateGas {
       return Optional.of(errorResponse(requestContext, maybeResult.get()));
     }
     return Optional.empty();
+  }
+
+  /**
+   * Estimate gas by adding call stipend and compute the necessary gas for sub calls
+   *
+   * @param result transaction simulator result
+   * @return estimate gas
+   */
+  protected long processEstimateGas(final TransactionSimulatorResult result) {
+    final long gasUsedByTransaction = result.result().getEstimateGasUsedByTransaction();
+
+    // no more than 64/63 of the remaining gas can be passed to the sub calls
+    return ((long) ((gasUsedByTransaction + CALL_STIPEND) * SUB_CALL_REMAINING_GAS_RATIO));
   }
 }

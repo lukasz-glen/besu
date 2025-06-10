@@ -36,7 +36,7 @@ public enum RpcErrorType implements RpcMethodError {
       "Invalid blob count (blob transactions must have at least one blob)"),
   INVALID_BLOB_GAS_USED_PARAMS(
       INVALID_PARAMS_ERROR_CODE, "Invalid blob gas used param (missing or invalid)"),
-  INVALID_BLOCK_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid block, unable to parse RLP"),
+  INVALID_BLOCK_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid block param (block not found)"),
   INVALID_BLOCK_COUNT_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid block count params"),
   INVALID_BLOCK_HASH_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid block hash params"),
   INVALID_BLOCK_INDEX_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid block index params"),
@@ -44,8 +44,6 @@ public enum RpcErrorType implements RpcMethodError {
   INVALID_CALL_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid call params"),
   INVALID_CONSOLIDATION_REQUEST_PARAMS(
       INVALID_PARAMS_ERROR_CODE, "Invalid consolidation request params"),
-  INVALID_CREATE_PRIVACY_GROUP_PARAMS(
-      INVALID_PARAMS_ERROR_CODE, "Invalid create privacy group params"),
   INVALID_DATA_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid data params"),
   INVALID_DATA_HASH_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid data hash params"),
   INVALID_DEPOSIT_REQUEST_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid deposit request"),
@@ -62,9 +60,9 @@ public enum RpcErrorType implements RpcMethodError {
   INVALID_ENODE_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid enode params"),
   INVALID_EXCESS_BLOB_GAS_PARAMS(
       INVALID_PARAMS_ERROR_CODE, "Invalid excess blob gas params (missing or invalid)"),
+  INVALID_EXECUTION_REQUESTS_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid execution requests params"),
   INVALID_EXTRA_DATA_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid extra data params"),
   INVALID_FILTER_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid filter params"),
-  INVALID_GAS_PRICE_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid gas price params"),
   INVALID_HASH_RATE_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid hash rate params"),
   INVALID_ID_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid ID params"),
   INVALID_RETURN_COMPLETE_TRANSACTION_PARAMS(
@@ -87,13 +85,13 @@ public enum RpcErrorType implements RpcMethodError {
   INVAlID_PLUGIN_NAME_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid plug in name params"),
   INVALID_POSITION_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid position params"),
   INVALID_POW_HASH_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid pow hash params"),
-  INVALID_PRIVACY_GROUP_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid privacy group params"),
   INVALID_PRIVATE_FROM_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid private from params"),
   INVALID_PRIVATE_FOR_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid private for params"),
   INVALID_PROPOSAL_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid proposal params"),
   INVALID_REMOTE_CAPABILITIES_PARAMS(
       INVALID_PARAMS_ERROR_CODE, "Invalid remote capabilities params"),
   INVALID_REWARD_PERCENTILES_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid reward percentiles params"),
+  INVALID_REQUESTS_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid requests params"),
   INVALID_SEALER_ID_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid sealer ID params"),
   INVALID_STORAGE_KEYS_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid storage keys params"),
   INVALID_SUBSCRIPTION_PARAMS(INVALID_PARAMS_ERROR_CODE, "Invalid subscription params"),
@@ -135,6 +133,7 @@ public enum RpcErrorType implements RpcMethodError {
   ETH_SEND_TX_REPLACEMENT_UNDERPRICED(-32000, "Replacement transaction underpriced"),
   // P2P related errors
   P2P_DISABLED(-32000, "P2P has been disabled. This functionality is not available"),
+  DISCOVERY_DISABLED(-32000, "Discovery has been disabled. This functionality is not available"),
   P2P_NETWORK_NOT_RUNNING(-32000, "P2P network is not running"),
 
   // Filter & Subscription Errors
@@ -146,10 +145,11 @@ public enum RpcErrorType implements RpcMethodError {
   // Transaction validation failures
   NONCE_TOO_LOW(-32001, "Nonce too low"),
   INVALID_TRANSACTION_SIGNATURE(-32002, "Invalid signature"),
-  INVALID_TRANSACTION_TYPE(-32602, "Invalid transaction type"),
+  INVALID_TRANSACTION_TYPE(INVALID_PARAMS_ERROR_CODE, "Invalid transaction type"),
   INTRINSIC_GAS_EXCEEDS_LIMIT(-32003, "Intrinsic gas exceeds gas limit"),
   TRANSACTION_UPFRONT_COST_EXCEEDS_BALANCE(-32004, "Upfront cost exceeds account balance"),
   EXCEEDS_BLOCK_GAS_LIMIT(-32005, "Transaction gas limit exceeds block gas limit"),
+  EXCEEDS_TRANSACTION_GAS_LIMIT(-32005, "Transaction gas limit cap exceeded"),
   EXCEEDS_RPC_MAX_BLOCK_RANGE(-32005, "Requested range exceeds maximum RPC range limit"),
   EXCEEDS_RPC_MAX_BATCH_SIZE(-32005, "Number of requests exceeds max batch size"),
   NONCE_TOO_HIGH(-32006, "Nonce too high"),
@@ -237,32 +237,6 @@ public enum RpcErrorType implements RpcMethodError {
   // Permissioning/Authorization errors
   UNAUTHORIZED(-40100, "Unauthorized"),
 
-  // Private transaction errors
-  ENCLAVE_ERROR(-50100, "Error communicating with enclave"),
-  UNSUPPORTED_PRIVATE_TRANSACTION_TYPE(-50100, "Unsupported private transaction type"),
-  PRIVACY_NOT_ENABLED(-50100, "Privacy is not enabled"),
-  CREATE_PRIVACY_GROUP_ERROR(-50100, "Error creating privacy group"),
-  DECODE_ERROR(-50100, "Unable to decode the private signed raw transaction"),
-  DELETE_PRIVACY_GROUP_ERROR(-50100, "Error deleting privacy group"),
-  FIND_PRIVACY_GROUP_ERROR(-50100, "Error finding privacy group"),
-  FIND_FLEXIBLE_PRIVACY_GROUP_ERROR(-50100, "Error finding flexible privacy group"),
-  GET_PRIVATE_TRANSACTION_NONCE_ERROR(-50100, "Unable to determine nonce for account in group."),
-  OFFCHAIN_PRIVACY_GROUP_DOES_NOT_EXIST(-50100, "Offchain Privacy group does not exist."),
-  FLEXIBLE_PRIVACY_GROUP_DOES_NOT_EXIST(-50100, "Flexible Privacy group does not exist."),
-  FLEXIBLE_PRIVACY_GROUP_NOT_ENABLED(-50100, "Flexible privacy groups not enabled."),
-  OFFCHAIN_PRIVACY_GROUP_NOT_ENABLED(
-      -50100, "Offchain privacy group can't be used with Flexible privacy groups enabled."),
-  FLEXIBLE_PRIVACY_GROUP_ID_NOT_AVAILABLE(
-      -50100, "Private transactions to flexible privacy groups must use privacyGroupId"),
-  PMT_FAILED_INTRINSIC_GAS_EXCEEDS_LIMIT(
-      -50100,
-      "Privacy Marker Transaction failed due to intrinsic gas exceeding the limit. Gas limit used from the Private Transaction."),
-  PRIVATE_FROM_DOES_NOT_MATCH_ENCLAVE_PUBLIC_KEY(
-      -50100, "Private from does not match enclave public key"),
-  VALUE_NOT_ZERO(-50100, "We cannot transfer ether in a private transaction yet."),
-  PRIVATE_TRANSACTION_INVALID(-50100, "Private transaction invalid"),
-  PRIVATE_TRANSACTION_FAILED(-50100, "Private transaction failed"),
-
   CANT_CONNECT_TO_LOCAL_PEER(-32100, "Cannot add local node as peer."),
   CANT_RESOLVE_PEER_ENODE_DNS(-32100, "Cannot resolve enode DNS hostname"),
   DNS_NOT_ENABLED(-32100, "Enode DNS support is disabled"),
@@ -272,39 +246,6 @@ public enum RpcErrorType implements RpcMethodError {
       -32000,
       "Invalid node ID: node ID must have exactly 128 hexadecimal characters and should not include any '0x' hex prefix."),
   JSON_RPC_NOT_CANONICAL_ERROR(-32000, "Invalid input"),
-
-  // Enclave errors
-  NODE_MISSING_PEER_URL(-50200, "NodeMissingPeerUrl"),
-  NODE_PUSHING_TO_PEER(-50200, "NodePushingToPeer"),
-  NODE_PROPAGATING_TO_ALL_PEERS(-50200, "NodePropagatingToAllPeers"),
-  NO_SENDER_KEY(-50200, "NoSenderKey"),
-  INVALID_PAYLOAD(-50200, "InvalidPayload"),
-  ENCLAVE_CREATE_KEY_PAIR(-50200, "EnclaveCreateKeyPair"),
-  ENCLAVE_DECODE_PUBLIC_KEY(-50200, "EnclaveDecodePublicKey"),
-  ENCLAVE_DECRYPT_WRONG_PRIVATE_KEY(-50200, "EnclaveDecryptWrongPrivateKey"),
-  ENCLAVE_ENCRYPT_COMBINE_KEYS(-50200, "EnclaveEncryptCombineKeys"),
-  ENCLAVE_MISSING_PRIVATE_KEY_PASSWORD(-50200, "EnclaveMissingPrivateKeyPasswords"),
-  ENCLAVE_NO_MATCHING_PRIVATE_KEY(-50200, "EnclaveNoMatchingPrivateKey"),
-  ENCLAVE_NOT_PAYLOAD_OWNER(-50200, "EnclaveNotPayloadOwner"),
-  ENCLAVE_UNSUPPORTED_PRIVATE_KEY_TYPE(-50200, "EnclaveUnsupportedPrivateKeyType"),
-  ENCLAVE_STORAGE_DECRYPT(-50200, "EnclaveStorageDecrypt"),
-  ENCLAVE_PRIVACY_GROUP_CREATION(-50200, "EnclavePrivacyGroupIdCreation"),
-  ENCLAVE_PAYLOAD_NOT_FOUND(-50200, "EnclavePayloadNotFound"),
-  CREATE_GROUP_INCLUDE_SELF(-50200, "CreatePrivacyGroupShouldIncludeSelf"),
-
-  // Tessera error codes
-  TESSERA_NODE_MISSING_PEER_URL(-50200, "Recipient not found for key:"),
-  TESSERA_CREATE_GROUP_INCLUDE_SELF(
-      -50200, "The list of members in a privacy group should include self"),
-
-  /** Storing privacy group issue */
-  ENCLAVE_UNABLE_STORE_PRIVACY_GROUP(-50200, "PrivacyGroupNotStored"),
-  ENCLAVE_UNABLE_DELETE_PRIVACY_GROUP(-50200, "PrivacyGroupNotDeleted"),
-  ENCLAVE_UNABLE_PUSH_DELETE_PRIVACY_GROUP(-50200, "PrivacyGroupNotPushed"),
-  ENCLAVE_PRIVACY_GROUP_MISSING(-50200, "PrivacyGroupNotFound"),
-  ENCLAVE_PRIVACY_QUERY_ERROR(-50200, "PrivacyGroupQueryError"),
-  ENCLAVE_KEYS_CANNOT_DECRYPT_PAYLOAD(-50200, "EnclaveKeysCannotDecryptPayload"),
-  METHOD_UNIMPLEMENTED(-50200, "MethodUnimplemented"),
 
   /** Plugins error */
   PLUGIN_NOT_FOUND(-60000, "Plugin not found"),

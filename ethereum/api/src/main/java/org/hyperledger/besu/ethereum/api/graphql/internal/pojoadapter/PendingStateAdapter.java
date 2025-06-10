@@ -21,16 +21,17 @@ import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.api.query.TransactionWithMetadata;
 import org.hyperledger.besu.ethereum.eth.transactions.PendingTransaction;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPool;
-import org.hyperledger.besu.ethereum.mainnet.ImmutableTransactionValidationParams;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.TransactionValidationParams;
 import org.hyperledger.besu.ethereum.transaction.CallParameter;
+import org.hyperledger.besu.ethereum.transaction.ImmutableCallParameter;
 import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.evm.tracing.OperationTracer;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import graphql.schema.DataFetchingEnvironment;
 import org.apache.tuweni.bytes.Bytes;
@@ -75,7 +76,7 @@ public class PendingStateAdapter extends AdapterBase {
     return transactionPool.getPendingTransactions().stream()
         .map(PendingTransaction::getTransaction)
         .map(TransactionWithMetadata::new)
-        .map(TransactionAdapter::new)
+        .map(tx -> new TransactionAdapter(tx, null))
         .toList();
   }
 
@@ -135,44 +136,41 @@ public class PendingStateAdapter extends AdapterBase {
     // until the miner can expose the current "proposed block" we have no
     // speculative environment, so estimate against latest.
     final Map<String, Object> callData = environment.getArgument("data");
-    final Address from = (Address) callData.get("from");
-    final Address to = (Address) callData.get("to");
-    final Long gas = (Long) callData.get("gas");
-    final UInt256 gasPrice = (UInt256) callData.get("gasPrice");
-    final UInt256 value = (UInt256) callData.get("value");
-    final Bytes data = (Bytes) callData.get("data");
+    final Optional<Address> from = Optional.ofNullable((Address) callData.get("from"));
+    final Optional<Address> to = Optional.ofNullable((Address) callData.get("to"));
+    final var gasParam = callData.get("gas");
+    final OptionalLong gas =
+        gasParam != null ? OptionalLong.of((Long) gasParam) : OptionalLong.empty();
+    final Optional<Wei> gasPrice =
+        Optional.ofNullable((UInt256) callData.get("gasPrice")).map(Wei::of);
+    final Optional<Wei> value = Optional.ofNullable((UInt256) callData.get("value")).map(Wei::of);
+    final Optional<Bytes> data = Optional.ofNullable((Bytes) callData.get("data"));
+    final Optional<Wei> maxFeePerGas =
+        Optional.ofNullable((UInt256) callData.get("maxFeePerGas")).map(Wei::of);
+    final Optional<Wei> maxPriorityFeePerGas =
+        Optional.ofNullable((UInt256) callData.get("maxPriorityFeePerGas")).map(Wei::of);
 
     final BlockchainQueries query = getBlockchainQueries(environment);
     final ProtocolSchedule protocolSchedule =
         environment.getGraphQlContext().get(GraphQLContextType.PROTOCOL_SCHEDULE);
-    final long gasCap = environment.getGraphQlContext().get(GraphQLContextType.GAS_CAP);
     final TransactionSimulator transactionSimulator =
-        new TransactionSimulator(
-            query.getBlockchain(), query.getWorldStateArchive(), protocolSchedule, gasCap);
+        environment.getGraphQlContext().get(GraphQLContextType.TRANSACTION_SIMULATOR);
 
-    long gasParam = -1;
-    Wei gasPriceParam = null;
-    Wei valueParam = null;
-    if (gas != null) {
-      gasParam = gas;
-    }
-    if (gasPrice != null) {
-      gasPriceParam = Wei.of(gasPrice);
-    }
-    if (value != null) {
-      valueParam = Wei.of(value);
-    }
-    final CallParameter param =
-        new CallParameter(from, to, gasParam, gasPriceParam, valueParam, data);
-
-    ImmutableTransactionValidationParams.Builder transactionValidationParams =
-        ImmutableTransactionValidationParams.builder()
-            .from(TransactionValidationParams.transactionSimulator());
-    transactionValidationParams.isAllowExceedingBalance(true);
+    final CallParameter callParameters =
+        ImmutableCallParameter.builder()
+            .sender(from)
+            .to(to)
+            .gas(gas)
+            .gasPrice(gasPrice)
+            .value(value)
+            .maxPriorityFeePerGas(maxPriorityFeePerGas)
+            .maxFeePerGas(maxFeePerGas)
+            .input(data)
+            .build();
 
     return transactionSimulator.process(
-        param,
-        transactionValidationParams.build(),
+        callParameters,
+        TransactionValidationParams.transactionSimulatorAllowExceedingBalanceAndFutureNonce(),
         OperationTracer.NO_TRACING,
         (mutableWorldState, transactionSimulatorResult) ->
             transactionSimulatorResult.map(

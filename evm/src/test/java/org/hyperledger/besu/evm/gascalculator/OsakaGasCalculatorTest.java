@@ -28,14 +28,4 @@ class OsakaGasCalculatorTest {
     assertThat(subject.isPrecompile(Address.precompiled(0x14))).isFalse();
     assertThat(subject.isPrecompile(Address.BLS12_MAP_FP2_TO_G2)).isTrue();
   }
-
-  @Test
-  void testNewConstants() {
-    CancunGasCalculator cancunGas = new CancunGasCalculator();
-    OsakaGasCalculator praugeGasCalculator = new OsakaGasCalculator();
-
-    assertThat(praugeGasCalculator.getMinCalleeGas()).isGreaterThan(cancunGas.getMinCalleeGas());
-    assertThat(praugeGasCalculator.getMinRetainedGas())
-        .isGreaterThan(cancunGas.getMinRetainedGas());
-  }
 }

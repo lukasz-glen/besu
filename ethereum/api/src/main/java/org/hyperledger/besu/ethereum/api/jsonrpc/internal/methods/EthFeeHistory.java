@@ -18,13 +18,13 @@ import static org.hyperledger.besu.ethereum.mainnet.feemarket.ExcessBlobGasCalcu
 
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.datatypes.Wei;
+import org.hyperledger.besu.datatypes.parameters.UnsignedIntParameter;
 import org.hyperledger.besu.ethereum.api.ApiConfiguration;
 import org.hyperledger.besu.ethereum.api.jsonrpc.RpcMethod;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequestContext;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.exception.InvalidJsonRpcParameters;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.BlockParameter;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.JsonRpcParameter.JsonRpcParameterException;
-import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.UnsignedIntParameter;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcErrorResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcSuccessResponse;
@@ -67,6 +67,7 @@ public class EthFeeHistory implements JsonRpcMethod {
   private final ApiConfiguration apiConfiguration;
   private final Cache<RewardCacheKey, List<Wei>> cache;
   private static final int MAXIMUM_CACHE_SIZE = 100_000;
+  private static final int MAXIMUM_QUERY_PERCENTILES = 100;
 
   record RewardCacheKey(Hash blockHash, List<Double> rewardPercentiles) {}
 
@@ -139,8 +140,9 @@ public class EthFeeHistory implements JsonRpcMethod {
     final List<Double> gasUsedRatios = getGasUsedRatios(blockHeaderRange);
     final List<Double> blobGasUsedRatios = getBlobGasUsedRatios(blockHeaderRange);
     final Optional<List<List<Wei>>> maybeRewards =
-        maybeRewardPercentiles.map(
-            percentiles -> getRewards(percentiles, blockHeaderRange, nextBaseFee));
+        maybeRewardPercentiles
+            .filter(list -> list.size() <= MAXIMUM_QUERY_PERCENTILES)
+            .map(percentiles -> getRewards(percentiles, blockHeaderRange, nextBaseFee));
     return new JsonRpcSuccessResponse(
         requestId,
         createFeeHistoryResult(

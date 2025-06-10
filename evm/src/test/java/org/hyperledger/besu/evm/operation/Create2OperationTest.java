@@ -33,7 +33,6 @@ import org.hyperledger.besu.evm.frame.BlockValues;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.ConstantinopleGasCalculator;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
-import org.hyperledger.besu.evm.internal.Words;
 import org.hyperledger.besu.evm.log.Log;
 import org.hyperledger.besu.evm.operation.Operation.OperationResult;
 import org.hyperledger.besu.evm.processor.ContractCreationProcessor;
@@ -43,8 +42,8 @@ import org.hyperledger.besu.evm.worldstate.WorldUpdater;
 
 import java.util.Deque;
 import java.util.List;
-import javax.annotation.Nonnull;
 
+import jakarta.validation.constraints.NotNull;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.units.bigints.UInt256;
 import org.junit.jupiter.api.Test;
@@ -56,7 +55,7 @@ public class Create2OperationTest {
   private MessageFrame messageFrame;
   private final WorldUpdater worldUpdater = mock(WorldUpdater.class);
   private final MutableAccount account = mock(MutableAccount.class);
-  private final EVM evm = MainnetEVMs.osaka(EvmConfiguration.DEFAULT);
+  private final EVM evm = MainnetEVMs.futureEips(EvmConfiguration.DEFAULT);
   private final MutableAccount newAccount = mock(MutableAccount.class);
 
   private final Create2Operation operation =
@@ -151,7 +150,7 @@ public class Create2OperationTest {
             .code(evm.getCodeUncached(codeBytes))
             .completer(__ -> {})
             .address(Address.fromHexString(sender))
-            .blockHashLookup(n -> Hash.hash(Words.longBytes(n)))
+            .blockHashLookup((__, ___) -> Hash.ZERO)
             .blockValues(mock(BlockValues.class))
             .gasPrice(Wei.ZERO)
             .miningBeneficiary(Address.ZERO)
@@ -250,7 +249,7 @@ public class Create2OperationTest {
     assertThat(result.getHaltReason()).isEqualTo(CODE_TOO_LARGE);
   }
 
-  @Nonnull
+  @NotNull
   private MessageFrame testMemoryFrame(final UInt256 memoryOffset, final UInt256 memoryLength) {
     final MessageFrame messageFrame =
         MessageFrame.builder()
@@ -263,7 +262,7 @@ public class Create2OperationTest {
             .code(evm.getCodeUncached(SIMPLE_CREATE))
             .completer(__ -> {})
             .address(Address.fromHexString(SENDER))
-            .blockHashLookup(n -> Hash.hash(Words.longBytes(n)))
+            .blockHashLookup((__, ___) -> Hash.ZERO)
             .blockValues(mock(BlockValues.class))
             .gasPrice(Wei.ZERO)
             .miningBeneficiary(Address.ZERO)

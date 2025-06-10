@@ -15,6 +15,7 @@
 package org.hyperledger.besu.ethereum.mainnet;
 
 import org.hyperledger.besu.config.MergeConfiguration;
+import org.hyperledger.besu.ethereum.GasLimitCalculator;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.mainnet.feemarket.BaseFeeMarket;
 import org.hyperledger.besu.ethereum.mainnet.feemarket.FeeMarket;
@@ -28,12 +29,13 @@ import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.ExtraDataMaxL
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.GasLimitRangeAndDeltaValidationRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.GasUsageValidationRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.IncrementalTimestampRule;
+import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.NoBlobRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.NoDifficultyRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.NoNonceRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.ProofOfWorkValidationRule;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.TimestampBoundedByFutureParameter;
 import org.hyperledger.besu.ethereum.mainnet.headervalidationrules.TimestampMoreRecentThanParent;
-import org.hyperledger.besu.evm.gascalculator.CancunGasCalculator;
+import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
 import java.util.Optional;
 
@@ -179,7 +181,10 @@ public final class MainnetBlockHeaderValidator {
         .addRule((new BaseFeeMarketBlockHeaderGasPriceValidationRule(baseFeeMarket)));
   }
 
-  public static BlockHeaderValidator.Builder mergeBlockHeaderValidator(final FeeMarket feeMarket) {
+  public static BlockHeaderValidator.Builder mergeBlockHeaderValidator(
+      final FeeMarket feeMarket,
+      final GasCalculator gasCalculator,
+      final GasLimitCalculator gasLimitCalculator) {
 
     var baseFeeMarket = (BaseFeeMarket) feeMarket;
 
@@ -197,8 +202,19 @@ public final class MainnetBlockHeaderValidator {
         .addRule(new IncrementalTimestampRule());
   }
 
-  public static BlockHeaderValidator.Builder cancunBlockHeaderValidator(final FeeMarket feeMarket) {
-    return mergeBlockHeaderValidator(feeMarket)
-        .addRule(new BlobGasValidationRule(new CancunGasCalculator()));
+  public static BlockHeaderValidator.Builder noBlobBlockHeaderValidator(
+      final FeeMarket feeMarket,
+      final GasCalculator gasCalculator,
+      final GasLimitCalculator gasLimitCalculator) {
+    return mergeBlockHeaderValidator(feeMarket, gasCalculator, gasLimitCalculator)
+        .addRule(new NoBlobRule());
+  }
+
+  public static BlockHeaderValidator.Builder blobAwareBlockHeaderValidator(
+      final FeeMarket feeMarket,
+      final GasCalculator gasCalculator,
+      final GasLimitCalculator gasLimitCalculator) {
+    return mergeBlockHeaderValidator(feeMarket, gasCalculator, gasLimitCalculator)
+        .addRule(new BlobGasValidationRule(gasCalculator, gasLimitCalculator));
   }
 }

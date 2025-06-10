@@ -17,8 +17,11 @@ package org.hyperledger.besu.ethereum;
 /** The GasLimitCalculator interface defines methods for calculating the gas limit. */
 public interface GasLimitCalculator {
 
-  /** The constant BLOB_GAS_LIMIT represents the gas limit for blob data. */
-  long BLOB_GAS_LIMIT = 786432;
+  /**
+   * The constant BLOB_GAS_LIMIT represents the gas limit for blob data. Defaults to the Cancun
+   * value where it was first introduced as part of EIP-4844
+   */
+  long BLOB_GAS_LIMIT = 0xC0000;
 
   /**
    * Calculates the next gas limit based on the current gas limit, target gas limit, and new block
@@ -47,5 +50,30 @@ public interface GasLimitCalculator {
    */
   default long currentBlobGasLimit() {
     return BLOB_GAS_LIMIT;
+  }
+
+  /**
+   * Compute the new value for the excess blob gas, given the parent value and the blob gas used
+   *
+   * @param parentExcessBlobGas excess blob gas from the parent
+   * @param blobGasUsed blob gas used
+   * @param parentBaseFeePerGas base fee per gas from the parent
+   * @return the new excess blob gas value
+   */
+  default long computeExcessBlobGas(
+      final long parentExcessBlobGas, final long blobGasUsed, final long parentBaseFeePerGas) {
+    return 0L;
+  }
+
+  /**
+   * Return the transaction gas limit cap.
+   *
+   * <p>Before Osaka, there was no limit, and it is safe to use long max value to represent that,
+   * since no transaction has ever reached it.
+   *
+   * @return the transaction gas limit cap.
+   */
+  default long transactionGasLimitCap() {
+    return Long.MAX_VALUE;
   }
 }

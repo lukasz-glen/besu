@@ -16,7 +16,7 @@
 apply plugin: 'java-library'
 
 jar {
-  archiveBaseName = 'besu-nat'
+  archiveBaseName = calculateArtifactId(project)
   manifest {
     attributes(
       'Specification-Title': archiveBaseName,
@@ -35,7 +35,6 @@ dependencies {
   implementation 'com.squareup.okhttp3:okhttp'
   implementation 'org.jupnp:org.jupnp'
   implementation 'org.jupnp:org.jupnp.support'
-  implementation 'io.kubernetes:client-java'
 
   // test dependencies.
   testImplementation project(path: ':ethereum:core', configuration: 'testArtifacts')

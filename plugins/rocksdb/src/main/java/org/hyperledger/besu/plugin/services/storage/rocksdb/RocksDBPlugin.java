@@ -14,8 +14,8 @@
  */
 package org.hyperledger.besu.plugin.services.storage.rocksdb;
 
-import org.hyperledger.besu.plugin.BesuContext;
 import org.hyperledger.besu.plugin.BesuPlugin;
+import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.StorageService;
 import org.hyperledger.besu.plugin.services.storage.SegmentIdentifier;
@@ -40,9 +40,8 @@ public class RocksDBPlugin implements BesuPlugin {
 
   private final RocksDBCLIOptions options;
   private final List<SegmentIdentifier> ignorableSegments = new ArrayList<>();
-  private BesuContext context;
+  private ServiceManager context;
   private RocksDBKeyValueStorageFactory factory;
-  private RocksDBKeyValuePrivacyStorageFactory privacyFactory;
 
   /** Instantiates a newRocksDb plugin. */
   public RocksDBPlugin() {
@@ -59,7 +58,7 @@ public class RocksDBPlugin implements BesuPlugin {
   }
 
   @Override
-  public void register(final BesuContext context) {
+  public void register(final ServiceManager context) {
     LOG.debug("Registering plugin");
     this.context = context;
 
@@ -97,15 +96,6 @@ public class RocksDBPlugin implements BesuPlugin {
     } catch (final IOException e) {
       LOG.error("Failed to stop plugin: {}", e.getMessage(), e);
     }
-
-    try {
-      if (privacyFactory != null) {
-        privacyFactory.close();
-        privacyFactory = null;
-      }
-    } catch (final IOException e) {
-      LOG.error("Failed to stop plugin: {}", e.getMessage(), e);
-    }
   }
 
   /**
@@ -115,6 +105,15 @@ public class RocksDBPlugin implements BesuPlugin {
    */
   public boolean isHighSpecEnabled() {
     return options.isHighSpec();
+  }
+
+  /**
+   * Gets blob db settings.
+   *
+   * @return the blob db settings
+   */
+  public RocksDBCLIOptions.BlobDBSettings getBlobDBSettings() {
+    return options.getBlobDBSettings();
   }
 
   private void createAndRegister(final StorageService service) {
@@ -128,10 +127,8 @@ public class RocksDBPlugin implements BesuPlugin {
             segments,
             ignorableSegments,
             RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS);
-    privacyFactory = new RocksDBKeyValuePrivacyStorageFactory(factory);
 
     service.registerKeyValueStorage(factory);
-    service.registerKeyValueStorage(privacyFactory);
   }
 
   private void createFactoriesAndRegisterWithStorageService() {

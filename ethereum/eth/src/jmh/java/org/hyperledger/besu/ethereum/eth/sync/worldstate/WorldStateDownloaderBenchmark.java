@@ -17,6 +17,7 @@ package org.hyperledger.besu.ethereum.eth.sync.worldstate;
 import static org.hyperledger.besu.ethereum.core.InMemoryKeyValueStorageProvider.createInMemoryWorldStateArchive;
 import static org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions.DEFAULT_BACKGROUND_THREAD_COUNT;
 import static org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions.DEFAULT_CACHE_CAPACITY;
+import static org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions.DEFAULT_ENABLE_READ_CACHE_FOR_SNAPSHOTS;
 import static org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions.DEFAULT_IS_HIGH_SPEC;
 import static org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions.DEFAULT_MAX_OPEN_FILES;
 
@@ -27,6 +28,7 @@ import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
 import org.hyperledger.besu.ethereum.core.MutableWorldState;
 import org.hyperledger.besu.ethereum.eth.manager.EthContext;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManager;
+import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestBuilder;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestUtil;
 import org.hyperledger.besu.ethereum.eth.manager.EthScheduler;
 import org.hyperledger.besu.ethereum.eth.manager.RespondingEthPeer;
@@ -94,12 +96,14 @@ public class WorldStateDownloaderBenchmark {
 
     tempDir = Files.createTempDir().toPath();
     ethProtocolManager =
-        EthProtocolManagerTestUtil.create(
-            new EthScheduler(
-                syncConfig.getDownloaderParallelism(),
-                syncConfig.getTransactionsParallelism(),
-                syncConfig.getComputationParallelism(),
-                metricsSystem));
+        EthProtocolManagerTestBuilder.builder()
+            .setEthScheduler(
+                new EthScheduler(
+                    syncConfig.getDownloaderParallelism(),
+                    syncConfig.getTransactionsParallelism(),
+                    syncConfig.getComputationParallelism(),
+                    metricsSystem))
+            .build();
 
     peer = EthProtocolManagerTestUtil.createPeer(ethProtocolManager, blockHeader.getNumber());
 
@@ -128,7 +132,7 @@ public class WorldStateDownloaderBenchmark {
   private Hash createExistingWorldState() {
     // Setup existing state
     final WorldStateArchive worldStateArchive = createInMemoryWorldStateArchive();
-    final MutableWorldState worldState = worldStateArchive.getMutable();
+    final MutableWorldState worldState = worldStateArchive.getWorldState();
 
     dataGen.createRandomAccounts(worldState, 10000);
 
@@ -175,7 +179,11 @@ public class WorldStateDownloaderBenchmark {
                         DEFAULT_MAX_OPEN_FILES,
                         DEFAULT_BACKGROUND_THREAD_COUNT,
                         DEFAULT_CACHE_CAPACITY,
-                        DEFAULT_IS_HIGH_SPEC),
+                        DEFAULT_IS_HIGH_SPEC,
+                        DEFAULT_ENABLE_READ_CACHE_FOR_SNAPSHOTS,
+                        false,
+                        Optional.empty(),
+                        Optional.empty()),
                 Arrays.asList(KeyValueSegmentIdentifier.values()),
                 RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS))
         .withCommonConfiguration(besuConfiguration)

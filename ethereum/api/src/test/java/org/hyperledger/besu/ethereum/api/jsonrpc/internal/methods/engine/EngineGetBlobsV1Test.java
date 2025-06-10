@@ -15,6 +15,7 @@
 package org.hyperledger.besu.ethereum.api.jsonrpc.internal.methods.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hyperledger.besu.ethereum.api.jsonrpc.internal.methods.engine.EngineTestSupport.fromErrorResp;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
@@ -23,7 +24,6 @@ import org.hyperledger.besu.crypto.SECPPrivateKey;
 import org.hyperledger.besu.crypto.SignatureAlgorithm;
 import org.hyperledger.besu.crypto.SignatureAlgorithmFactory;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.datatypes.BlobsWithCommitments;
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.VersionedHash;
@@ -32,7 +32,6 @@ import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.api.jsonrpc.RpcMethod;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequest;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequestContext;
-import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcErrorResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.JsonRpcSuccessResponse;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.response.RpcErrorType;
@@ -41,7 +40,9 @@ import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.BlobTestFixture;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.core.TransactionTestFixture;
+import org.hyperledger.besu.ethereum.core.kzg.BlobsWithCommitments;
 import org.hyperledger.besu.ethereum.eth.transactions.TransactionPool;
+import org.hyperledger.besu.ethereum.util.TrustedSetupClassLoaderExtension;
 import org.hyperledger.besu.plugin.services.rpc.RpcResponseType;
 
 import java.math.BigInteger;
@@ -63,9 +64,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class})
 @MockitoSettings(strictness = Strictness.LENIENT)
-public class EngineGetBlobsV1Test {
+public class EngineGetBlobsV1Test extends TrustedSetupClassLoaderExtension {
 
   private static final Supplier<SignatureAlgorithm> SIGNATURE_ALGORITHM =
       Suppliers.memoize(SignatureAlgorithmFactory::getInstance);
@@ -120,9 +121,12 @@ public class EngineGetBlobsV1Test {
     // for loop to check each blob and proof
     for (int i = 0; i < versionedHashes.length; i++) {
       assertThat(Bytes.fromHexString(blobAndProofV1s.get(i).getBlob()))
-          .isEqualTo(blobsWithCommitments.getBlobQuads().get(i).blob().getData());
+          .isEqualTo(blobsWithCommitments.getBlobProofBundles().get(i).getBlob().getData());
+      assertThat(blobsWithCommitments.getBlobProofBundles().get(i).getKzgProof().size())
+          .isEqualTo(1);
       assertThat(Bytes.fromHexString(blobAndProofV1s.get(i).getProof()))
-          .isEqualTo(blobsWithCommitments.getBlobQuads().get(i).kzgProof().getData());
+          .isEqualTo(
+              blobsWithCommitments.getBlobProofBundles().get(i).getKzgProof().getFirst().getData());
     }
   }
 
@@ -150,9 +154,17 @@ public class EngineGetBlobsV1Test {
     for (int i = 0; i < versionedHashesList.size(); i++) {
       if (i != 1) {
         assertThat(Bytes.fromHexString(blobAndProofV1s.get(i).getBlob()))
-            .isEqualTo(blobsWithCommitments.getBlobQuads().get(i).blob().getData());
+            .isEqualTo(blobsWithCommitments.getBlobProofBundles().get(i).getBlob().getData());
+        assertThat(blobsWithCommitments.getBlobProofBundles().get(i).getKzgProof().size())
+            .isEqualTo(1);
         assertThat(Bytes.fromHexString(blobAndProofV1s.get(i).getProof()))
-            .isEqualTo(blobsWithCommitments.getBlobQuads().get(i).kzgProof().getData());
+            .isEqualTo(
+                blobsWithCommitments
+                    .getBlobProofBundles()
+                    .get(i)
+                    .getKzgProof()
+                    .getFirst()
+                    .getData());
       } else {
         assertThat(blobAndProofV1s.get(i)).isNull();
       }
@@ -228,10 +240,11 @@ public class EngineGetBlobsV1Test {
 
   private void mockTransactionPoolMethod(final BlobsWithCommitments blobsWithCommitments) {
     blobsWithCommitments
-        .getBlobQuads()
+        .getBlobProofBundles()
         .forEach(
-            blobQuad ->
-                when(transactionPool.getBlobQuad(blobQuad.versionedHash())).thenReturn(blobQuad));
+            blobProofBundle ->
+                when(transactionPool.getBlobProofBundle(blobProofBundle.getVersionedHash()))
+                    .thenReturn(blobProofBundle));
   }
 
   private JsonRpcResponse resp(final VersionedHash[] versionedHashes) {
@@ -255,13 +268,5 @@ public class EngineGetBlobsV1Test {
     final ArrayList<BlobAndProofV1> blobAndProofV1s = new ArrayList<>();
     list.forEach(obj -> blobAndProofV1s.add((BlobAndProofV1) obj));
     return blobAndProofV1s;
-  }
-
-  private RpcErrorType fromErrorResp(final JsonRpcResponse resp) {
-    assertThat(resp.getType()).isEqualTo(RpcResponseType.ERROR);
-    return Optional.of(resp)
-        .map(JsonRpcErrorResponse.class::cast)
-        .map(JsonRpcErrorResponse::getErrorType)
-        .get();
   }
 }

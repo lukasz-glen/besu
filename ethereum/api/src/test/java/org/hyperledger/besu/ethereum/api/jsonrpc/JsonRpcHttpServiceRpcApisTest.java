@@ -1,5 +1,5 @@
 /*
- * Copyright ConsenSys AG.
+ * Copyright contributors to Besu.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
@@ -36,8 +36,7 @@ import org.hyperledger.besu.ethereum.blockcreation.PoWMiningCoordinator;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.InMemoryKeyValueStorageProvider;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
-import org.hyperledger.besu.ethereum.core.PrivacyParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.ProtocolScheduleFixture;
 import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.eth.EthProtocol;
@@ -51,9 +50,11 @@ import org.hyperledger.besu.ethereum.p2p.network.P2PNetwork;
 import org.hyperledger.besu.ethereum.p2p.rlpx.wire.Capability;
 import org.hyperledger.besu.ethereum.permissioning.AccountLocalConfigPermissioningController;
 import org.hyperledger.besu.ethereum.permissioning.NodeLocalConfigPermissioningController;
+import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.metrics.prometheus.MetricsConfiguration;
 import org.hyperledger.besu.nat.NatService;
+import org.hyperledger.besu.testutil.DeterministicEthScheduler;
 
 import java.math.BigInteger;
 import java.nio.file.Path;
@@ -199,8 +200,7 @@ public class JsonRpcHttpServiceRpcApisTest {
   private JsonRpcHttpService createJsonRpcHttpServiceWithRpcApis(final JsonRpcConfiguration config)
       throws Exception {
     final Set<Capability> supportedCapabilities = new HashSet<>();
-    supportedCapabilities.add(EthProtocol.ETH62);
-    supportedCapabilities.add(EthProtocol.ETH63);
+    supportedCapabilities.add(EthProtocol.LATEST);
 
     final Map<String, JsonRpcMethod> rpcMethods =
         new JsonRpcMethodsFactory()
@@ -217,14 +217,13 @@ public class JsonRpcHttpServiceRpcApisTest {
                 mock(ProtocolContext.class),
                 mock(FilterManager.class),
                 mock(TransactionPool.class),
-                mock(MiningParameters.class),
+                mock(MiningConfiguration.class),
                 mock(PoWMiningCoordinator.class),
                 new NoOpMetricsSystem(),
                 supportedCapabilities,
                 Optional.of(mock(AccountLocalConfigPermissioningController.class)),
                 Optional.of(mock(NodeLocalConfigPermissioningController.class)),
                 config.getRpcApis(),
-                mock(PrivacyParameters.class),
                 mock(JsonRpcConfiguration.class),
                 mock(WebSocketConfiguration.class),
                 mock(MetricsConfiguration.class),
@@ -235,7 +234,9 @@ public class JsonRpcHttpServiceRpcApisTest {
                 mock(EthPeers.class),
                 vertx,
                 mock(ApiConfiguration.class),
-                Optional.empty());
+                Optional.empty(),
+                mock(TransactionSimulator.class),
+                new DeterministicEthScheduler());
     final JsonRpcHttpService jsonRpcHttpService =
         new JsonRpcHttpService(
             vertx,
@@ -280,7 +281,7 @@ public class JsonRpcHttpServiceRpcApisTest {
     when(genesisBlock.getHash()).thenReturn(Hash.ZERO);
     final P2PNetwork p2pNetwork =
         DefaultP2PNetwork.builder()
-            .supportedCapabilities(Capability.create("eth", 63))
+            .supportedCapabilities(EthProtocol.LATEST)
             .nodeKey(NodeKeyUtils.generate())
             .vertx(vertx)
             .config(config)
@@ -308,8 +309,7 @@ public class JsonRpcHttpServiceRpcApisTest {
       final MetricsConfiguration metricsConfiguration,
       final NatService natService) {
     final Set<Capability> supportedCapabilities = new HashSet<>();
-    supportedCapabilities.add(EthProtocol.ETH62);
-    supportedCapabilities.add(EthProtocol.ETH63);
+    supportedCapabilities.add(EthProtocol.LATEST);
     jsonRpcConfiguration.setPort(0);
     webSocketConfiguration.setPort(0);
 
@@ -328,14 +328,13 @@ public class JsonRpcHttpServiceRpcApisTest {
                 mock(ProtocolContext.class),
                 mock(FilterManager.class),
                 mock(TransactionPool.class),
-                mock(MiningParameters.class),
+                mock(MiningConfiguration.class),
                 mock(PoWMiningCoordinator.class),
                 new NoOpMetricsSystem(),
                 supportedCapabilities,
                 Optional.of(mock(AccountLocalConfigPermissioningController.class)),
                 Optional.of(mock(NodeLocalConfigPermissioningController.class)),
                 jsonRpcConfiguration.getRpcApis(),
-                mock(PrivacyParameters.class),
                 jsonRpcConfiguration,
                 webSocketConfiguration,
                 metricsConfiguration,
@@ -346,7 +345,9 @@ public class JsonRpcHttpServiceRpcApisTest {
                 mock(EthPeers.class),
                 vertx,
                 mock(ApiConfiguration.class),
-                Optional.empty());
+                Optional.empty(),
+                mock(TransactionSimulator.class),
+                new DeterministicEthScheduler());
     final JsonRpcHttpService jsonRpcHttpService =
         new JsonRpcHttpService(
             vertx,

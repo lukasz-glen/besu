@@ -22,8 +22,8 @@ import org.hyperledger.besu.ethereum.core.BlockImporter;
 import org.hyperledger.besu.ethereum.mainnet.blockhash.BlockHashProcessor;
 import org.hyperledger.besu.ethereum.mainnet.feemarket.FeeMarket;
 import org.hyperledger.besu.ethereum.mainnet.requests.RequestProcessorCoordinator;
-import org.hyperledger.besu.ethereum.mainnet.requests.RequestsValidatorCoordinator;
-import org.hyperledger.besu.ethereum.privacy.PrivateTransactionProcessor;
+import org.hyperledger.besu.ethereum.mainnet.requests.RequestsValidator;
+import org.hyperledger.besu.ethereum.mainnet.transactionpool.TransactionPoolPreProcessor;
 import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.precompile.PrecompileContractRegistry;
@@ -70,19 +70,18 @@ public class ProtocolSpec {
 
   private final boolean skipZeroBlockRewards;
 
-  private final PrivateTransactionProcessor privateTransactionProcessor;
-
   private final FeeMarket feeMarket;
 
   private final Optional<PoWHasher> powHasher;
 
   private final WithdrawalsValidator withdrawalsValidator;
   private final Optional<WithdrawalsProcessor> withdrawalsProcessor;
-  private final RequestsValidatorCoordinator requestsValidatorCoordinator;
+  private final RequestsValidator requestsValidator;
   private final Optional<RequestProcessorCoordinator> requestProcessorCoordinator;
   private final BlockHashProcessor blockHashProcessor;
   private final boolean isPoS;
   private final boolean isReplayProtectionSupported;
+  private final Optional<TransactionPoolPreProcessor> transactionPoolPreProcessor;
 
   /**
    * Creates a new protocol specification instance.
@@ -91,7 +90,6 @@ public class ProtocolSpec {
    * @param evm the EVM supporting the appropriate operations for this specification
    * @param transactionValidatorFactory the transaction validator factory to use
    * @param transactionProcessor the transaction processor to use
-   * @param privateTransactionProcessor the private transaction processor to use
    * @param blockHeaderValidator the block header validator to use
    * @param ommerHeaderValidator the rules used to validate an ommer
    * @param blockBodyValidator the block body validator to use
@@ -110,7 +108,7 @@ public class ProtocolSpec {
    * @param feeMarket an {@link Optional} wrapping {@link FeeMarket} class if appropriate.
    * @param powHasher the proof-of-work hasher
    * @param withdrawalsProcessor the Withdrawals processor to use
-   * @param requestsValidatorCoordinator the request validator to use
+   * @param requestsValidator the request validator to use
    * @param requestProcessorCoordinator the request processor to use
    * @param blockHashProcessor the blockHash processor to use
    * @param isPoS indicates whether the current spec is PoS
@@ -122,7 +120,6 @@ public class ProtocolSpec {
       final EVM evm,
       final TransactionValidatorFactory transactionValidatorFactory,
       final MainnetTransactionProcessor transactionProcessor,
-      final PrivateTransactionProcessor privateTransactionProcessor,
       final BlockHeaderValidator blockHeaderValidator,
       final BlockHeaderValidator ommerHeaderValidator,
       final BlockBodyValidator blockBodyValidator,
@@ -142,16 +139,16 @@ public class ProtocolSpec {
       final Optional<PoWHasher> powHasher,
       final WithdrawalsValidator withdrawalsValidator,
       final Optional<WithdrawalsProcessor> withdrawalsProcessor,
-      final RequestsValidatorCoordinator requestsValidatorCoordinator,
+      final RequestsValidator requestsValidator,
       final Optional<RequestProcessorCoordinator> requestProcessorCoordinator,
       final BlockHashProcessor blockHashProcessor,
       final boolean isPoS,
-      final boolean isReplayProtectionSupported) {
+      final boolean isReplayProtectionSupported,
+      final Optional<TransactionPoolPreProcessor> transactionPoolPreProcessor) {
     this.name = name;
     this.evm = evm;
     this.transactionValidatorFactory = transactionValidatorFactory;
     this.transactionProcessor = transactionProcessor;
-    this.privateTransactionProcessor = privateTransactionProcessor;
     this.blockHeaderValidator = blockHeaderValidator;
     this.ommerHeaderValidator = ommerHeaderValidator;
     this.blockBodyValidator = blockBodyValidator;
@@ -171,11 +168,12 @@ public class ProtocolSpec {
     this.powHasher = powHasher;
     this.withdrawalsValidator = withdrawalsValidator;
     this.withdrawalsProcessor = withdrawalsProcessor;
-    this.requestsValidatorCoordinator = requestsValidatorCoordinator;
+    this.requestsValidator = requestsValidator;
     this.requestProcessorCoordinator = requestProcessorCoordinator;
     this.blockHashProcessor = blockHashProcessor;
     this.isPoS = isPoS;
     this.isReplayProtectionSupported = isReplayProtectionSupported;
+    this.transactionPoolPreProcessor = transactionPoolPreProcessor;
   }
 
   /**
@@ -282,7 +280,7 @@ public class ProtocolSpec {
   }
 
   /**
-   * Returns the TransctionReceiptFactory used in this specification
+   * Returns the TransactionReceiptFactory used in this specification
    *
    * @return the transaction receipt factory
    */
@@ -325,10 +323,6 @@ public class ProtocolSpec {
 
   public PrecompileContractRegistry getPrecompileContractRegistry() {
     return precompileContractRegistry;
-  }
-
-  public PrivateTransactionProcessor getPrivateTransactionProcessor() {
-    return privateTransactionProcessor;
   }
 
   /**
@@ -375,8 +369,8 @@ public class ProtocolSpec {
     return withdrawalsProcessor;
   }
 
-  public RequestsValidatorCoordinator getRequestsValidatorCoordinator() {
-    return requestsValidatorCoordinator;
+  public RequestsValidator getRequestsValidator() {
+    return requestsValidator;
   }
 
   public Optional<RequestProcessorCoordinator> getRequestProcessorCoordinator() {
@@ -394,5 +388,14 @@ public class ProtocolSpec {
    */
   public boolean isPoS() {
     return isPoS;
+  }
+
+  /**
+   * A pre-processor for transactions in the transaction pool.
+   *
+   * @return the transaction pool pre-processor
+   */
+  public Optional<TransactionPoolPreProcessor> getTransactionPoolPreProcessor() {
+    return transactionPoolPreProcessor;
   }
 }

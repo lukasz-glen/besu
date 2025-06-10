@@ -16,6 +16,8 @@ package org.hyperledger.besu.ethereum.processing;
 
 import org.hyperledger.besu.ethereum.mainnet.ValidationResult;
 import org.hyperledger.besu.ethereum.transaction.TransactionInvalidReason;
+import org.hyperledger.besu.ethereum.trie.pathbased.common.worldview.accumulator.PathBasedWorldStateUpdateAccumulator;
+import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.log.Log;
 
 import java.util.List;
@@ -49,8 +51,13 @@ public class TransactionProcessingResult
 
   private final Bytes output;
 
+  private Optional<Boolean> isProcessedInParallel = Optional.empty();
+
   private final ValidationResult<TransactionInvalidReason> validationResult;
   private final Optional<Bytes> revertReason;
+
+  public PathBasedWorldStateUpdateAccumulator<?> accumulator;
+  private final Optional<ExceptionalHaltReason> exceptionalHaltReason;
 
   public static TransactionProcessingResult invalid(
       final ValidationResult<TransactionInvalidReason> validationResult) {
@@ -62,7 +69,8 @@ public class TransactionProcessingResult
       final long gasUsedByTransaction,
       final long gasRemaining,
       final ValidationResult<TransactionInvalidReason> validationResult,
-      final Optional<Bytes> revertReason) {
+      final Optional<Bytes> revertReason,
+      final Optional<ExceptionalHaltReason> exceptionalHaltReason) {
     return new TransactionProcessingResult(
         Status.FAILED,
         List.of(),
@@ -70,7 +78,8 @@ public class TransactionProcessingResult
         gasRemaining,
         Bytes.EMPTY,
         validationResult,
-        revertReason);
+        revertReason,
+        exceptionalHaltReason);
   }
 
   public static TransactionProcessingResult successful(
@@ -104,6 +113,26 @@ public class TransactionProcessingResult
     this.output = output;
     this.validationResult = validationResult;
     this.revertReason = revertReason;
+    this.exceptionalHaltReason = Optional.empty();
+  }
+
+  public TransactionProcessingResult(
+      final Status status,
+      final List<Log> logs,
+      final long estimateGasUsedByTransaction,
+      final long gasRemaining,
+      final Bytes output,
+      final ValidationResult<TransactionInvalidReason> validationResult,
+      final Optional<Bytes> revertReason,
+      final Optional<ExceptionalHaltReason> exceptionalHaltReason) {
+    this.status = status;
+    this.logs = logs;
+    this.estimateGasUsedByTransaction = estimateGasUsedByTransaction;
+    this.gasRemaining = gasRemaining;
+    this.output = output;
+    this.validationResult = validationResult;
+    this.revertReason = revertReason;
+    this.exceptionalHaltReason = exceptionalHaltReason;
   }
 
   /**
@@ -195,6 +224,25 @@ public class TransactionProcessingResult
   }
 
   /**
+   * Set isProcessedInParallel to the value in parameter
+   *
+   * @param isProcessedInParallel new value of isProcessedInParallel
+   */
+  public void setIsProcessedInParallel(final Optional<Boolean> isProcessedInParallel) {
+    this.isProcessedInParallel = isProcessedInParallel;
+  }
+
+  /**
+   * Returns a flag that indicates if the transaction was executed in parallel
+   *
+   * @return Optional of Boolean, the value of the boolean is true if the transaction was executed
+   *     in parallel
+   */
+  public Optional<Boolean> getIsProcessedInParallel() {
+    return isProcessedInParallel;
+  }
+
+  /**
    * Returns the reason why a transaction was reverted (if applicable).
    *
    * @return the revert reason.
@@ -209,6 +257,10 @@ public class TransactionProcessingResult
     return (validationResult.isValid()
         ? Optional.empty()
         : Optional.of(validationResult.getErrorMessage()));
+  }
+
+  public Optional<ExceptionalHaltReason> getExceptionalHaltReason() {
+    return exceptionalHaltReason;
   }
 
   @Override

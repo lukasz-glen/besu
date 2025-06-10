@@ -21,10 +21,11 @@ import org.hyperledger.besu.ethereum.core.BlockDataGenerator;
 import org.hyperledger.besu.ethereum.core.BlockDataGenerator.BlockOptions;
 import org.hyperledger.besu.ethereum.eth.manager.EthPeer;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManager;
+import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestBuilder;
 import org.hyperledger.besu.ethereum.eth.manager.EthProtocolManagerTestUtil;
 import org.hyperledger.besu.ethereum.eth.manager.RespondingEthPeer;
 import org.hyperledger.besu.ethereum.eth.messages.BlockHeadersMessage;
-import org.hyperledger.besu.ethereum.eth.messages.EthPV62;
+import org.hyperledger.besu.ethereum.eth.messages.EthProtocolMessages;
 import org.hyperledger.besu.ethereum.eth.messages.GetBlockHeadersMessage;
 import org.hyperledger.besu.testutil.DeterministicEthScheduler;
 
@@ -43,7 +44,11 @@ public abstract class AbstractPeerBlockValidatorTest {
   @Test
   public void validatePeer_unresponsivePeer() {
     final EthProtocolManager ethProtocolManager =
-        EthProtocolManagerTestUtil.create(DeterministicEthScheduler.TimeoutPolicy.ALWAYS_TIMEOUT);
+        EthProtocolManagerTestBuilder.builder()
+            .setEthScheduler(
+                new DeterministicEthScheduler(
+                    DeterministicEthScheduler.TimeoutPolicy.ALWAYS_TIMEOUT))
+            .build();
     final long blockNumber = 500;
 
     final PeerValidator validator = createValidator(blockNumber, 0);
@@ -61,7 +66,7 @@ public abstract class AbstractPeerBlockValidatorTest {
 
   @Test
   public void validatePeer_requestBlockFromPeerBeingTested() {
-    final EthProtocolManager ethProtocolManager = EthProtocolManagerTestUtil.create();
+    final EthProtocolManager ethProtocolManager = EthProtocolManagerTestBuilder.builder().build();
     final BlockDataGenerator gen = new BlockDataGenerator(1);
     final long blockNumber = 500;
     final Block block = gen.block(BlockOptions.create().setBlockNumber(blockNumber));
@@ -97,7 +102,11 @@ public abstract class AbstractPeerBlockValidatorTest {
   public void canBeValidated() {
     final BlockDataGenerator gen = new BlockDataGenerator(1);
     final EthProtocolManager ethProtocolManager =
-        EthProtocolManagerTestUtil.create(DeterministicEthScheduler.TimeoutPolicy.ALWAYS_TIMEOUT);
+        EthProtocolManagerTestBuilder.builder()
+            .setEthScheduler(
+                new DeterministicEthScheduler(
+                    DeterministicEthScheduler.TimeoutPolicy.ALWAYS_TIMEOUT))
+            .build();
     final long blockNumber = 500;
     final long buffer = 10;
 
@@ -126,7 +135,7 @@ public abstract class AbstractPeerBlockValidatorTest {
     final RespondingEthPeer.Responder responder =
         RespondingEthPeer.targetedResponder(
             (cap, msg) -> {
-              if (msg.getCode() != EthPV62.GET_BLOCK_HEADERS) {
+              if (msg.getCode() != EthProtocolMessages.GET_BLOCK_HEADERS) {
                 return false;
               }
               final GetBlockHeadersMessage headersRequest = GetBlockHeadersMessage.readFrom(msg);

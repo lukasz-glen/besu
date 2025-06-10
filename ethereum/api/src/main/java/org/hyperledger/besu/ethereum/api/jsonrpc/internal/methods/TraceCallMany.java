@@ -21,7 +21,6 @@ import org.hyperledger.besu.ethereum.api.jsonrpc.RpcMethod;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.JsonRpcRequestContext;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.exception.InvalidJsonRpcParameters;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.BlockParameter;
-import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.JsonCallParameter;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.JsonRpcParameter.JsonRpcParameterException;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.TraceCallManyParameter;
 import org.hyperledger.besu.ethereum.api.jsonrpc.internal.parameters.TraceTypeParameter;
@@ -32,6 +31,7 @@ import org.hyperledger.besu.ethereum.api.query.BlockchainQueries;
 import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
+import org.hyperledger.besu.ethereum.transaction.CallParameter;
 import org.hyperledger.besu.ethereum.transaction.TransactionSimulator;
 import org.hyperledger.besu.ethereum.transaction.TransactionSimulatorResult;
 import org.hyperledger.besu.ethereum.vm.DebugOperationTracer;
@@ -116,8 +116,7 @@ public class TraceCallMany extends TraceCall implements JsonRpcMethod {
         .getAndMapWorldState(
             blockHeader.getBlockHash(),
             ws -> {
-              final WorldUpdater updater =
-                  transactionSimulator.getEffectiveWorldStateUpdater(blockHeader, ws);
+              final WorldUpdater updater = transactionSimulator.getEffectiveWorldStateUpdater(ws);
               try {
                 Arrays.stream(transactionsAndTraceTypeParameters)
                     .forEachOrdered(
@@ -125,7 +124,7 @@ public class TraceCallMany extends TraceCall implements JsonRpcMethod {
                           final WorldUpdater localUpdater = updater.updater();
                           traceCallResults.add(
                               getSingleCallResult(
-                                  param.getTuple().getJsonCallParameter(),
+                                  param.getTuple().getCallParameter(),
                                   param.getTuple().getTraceTypeParameter(),
                                   blockHeader,
                                   localUpdater));
@@ -138,7 +137,7 @@ public class TraceCallMany extends TraceCall implements JsonRpcMethod {
               } catch (final EmptySimulatorResultException e) {
                 LOG.error(
                     "Empty simulator result, call params: {}, blockHeader: {} ",
-                    JsonCallParameterUtil.validateAndGetCallParams(requestContext),
+                    CallParameterUtil.validateAndGetCallParams(requestContext),
                     blockHeader);
                 return Optional.of(
                     new JsonRpcErrorResponse(requestContext.getRequest().getId(), INTERNAL_ERROR));
@@ -151,16 +150,27 @@ public class TraceCallMany extends TraceCall implements JsonRpcMethod {
   }
 
   private JsonNode getSingleCallResult(
-      final JsonCallParameter callParameter,
+      final CallParameter callParameter,
       final TraceTypeParameter traceTypeParameter,
       final BlockHeader header,
       final WorldUpdater worldUpdater) {
     final Set<TraceTypeParameter.TraceType> traceTypes = traceTypeParameter.getTraceTypes();
     final DebugOperationTracer tracer =
         new DebugOperationTracer(buildTraceOptions(traceTypes), false);
+    final var miningBeneficiary =
+        protocolSchedule
+            .getByBlockHeader(header)
+            .getMiningBeneficiaryCalculator()
+            .calculateBeneficiary(header);
     final Optional<TransactionSimulatorResult> maybeSimulatorResult =
         transactionSimulator.processWithWorldUpdater(
-            callParameter, buildTransactionValidationParams(), tracer, header, worldUpdater);
+            callParameter,
+            Optional.empty(),
+            buildTransactionValidationParams(),
+            tracer,
+            header,
+            worldUpdater,
+            miningBeneficiary);
 
     LOG.trace("Executing {} call for transaction {}", traceTypeParameter, callParameter);
     if (maybeSimulatorResult.isEmpty()) {

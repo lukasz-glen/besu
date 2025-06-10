@@ -15,7 +15,6 @@
 package org.hyperledger.besu.ethereum.api.jsonrpc.internal.methods;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
@@ -42,14 +41,14 @@ import org.hyperledger.besu.ethereum.core.BlockBody;
 import org.hyperledger.besu.ethereum.core.BlockDataGenerator;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.core.TransactionReceipt;
+import org.hyperledger.besu.ethereum.mainnet.CancunTargetingGasLimitCalculator;
 import org.hyperledger.besu.ethereum.mainnet.PoWHasher;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpec;
 import org.hyperledger.besu.ethereum.mainnet.blockhash.FrontierBlockHashProcessor;
-import org.hyperledger.besu.ethereum.mainnet.feemarket.CancunFeeMarket;
 import org.hyperledger.besu.ethereum.mainnet.feemarket.FeeMarket;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateArchive;
 import org.hyperledger.besu.evm.gascalculator.CancunGasCalculator;
@@ -137,7 +136,6 @@ public class EthGetTransactionReceiptTest {
           null,
           null,
           null,
-          null,
           BlockHeader::getCoinbase,
           null,
           false,
@@ -151,7 +149,8 @@ public class EthGetTransactionReceiptTest {
           Optional.empty(),
           new FrontierBlockHashProcessor(),
           true,
-          true);
+          true,
+          Optional.empty());
   private final ProtocolSpec statusTransactionTypeSpec =
       new ProtocolSpec(
           "status",
@@ -168,7 +167,6 @@ public class EthGetTransactionReceiptTest {
           null,
           null,
           null,
-          null,
           BlockHeader::getCoinbase,
           null,
           false,
@@ -182,7 +180,8 @@ public class EthGetTransactionReceiptTest {
           Optional.empty(),
           new FrontierBlockHashProcessor(),
           true,
-          true);
+          true,
+          Optional.empty());
 
   @SuppressWarnings("unchecked")
   private final ProtocolSchedule protocolSchedule = mock(ProtocolSchedule.class);
@@ -195,7 +194,7 @@ public class EthGetTransactionReceiptTest {
               protocolSchedule,
               blockchain,
               mock(WorldStateArchive.class),
-              MiningParameters.newDefault()));
+              MiningConfiguration.newDefault()));
   private final EthGetTransactionReceipt ethGetTransactionReceipt =
       new EthGetTransactionReceipt(blockchainQueries, protocolSchedule);
   private final String receiptString =
@@ -323,11 +322,14 @@ public class EthGetTransactionReceiptTest {
   }
 
   private void mockProtocolSpec(final BlockHeader blockHeader) {
-    FeeMarket feeMarket = mock(CancunFeeMarket.class);
-    when(feeMarket.blobGasPricePerGas(any())).thenCallRealMethod();
+    FeeMarket feeMarket = FeeMarket.cancunDefault(0, Optional.empty());
     ProtocolSpec spec = mock(ProtocolSpec.class);
     when(spec.getFeeMarket()).thenReturn(feeMarket);
     when(spec.getGasCalculator()).thenReturn(new CancunGasCalculator());
+    when(spec.getGasLimitCalculator())
+        .thenReturn(
+            new CancunTargetingGasLimitCalculator(
+                0L, FeeMarket.cancunDefault(0L, Optional.empty()), new CancunGasCalculator()));
     when(protocolSchedule.getByBlockHeader(blockHeader)).thenReturn(spec);
   }
 

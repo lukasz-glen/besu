@@ -22,6 +22,7 @@ import org.hyperledger.besu.ethereum.rlp.RLP;
 import org.hyperledger.besu.ethereum.rlp.RLPException;
 import org.hyperledger.besu.ethereum.rlp.RLPInput;
 
+import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -71,29 +72,23 @@ public class Address extends DelegatingBytes {
   /** The constant BLS12_G1ADD. */
   public static final Address BLS12_G1ADD = Address.precompiled(0xB);
 
-  /** The constant BLS12_G1MUL. */
-  public static final Address BLS12_G1MUL = Address.precompiled(0xC);
-
   /** The constant BLS12_G1MULTIEXP. */
-  public static final Address BLS12_G1MULTIEXP = Address.precompiled(0xD);
+  public static final Address BLS12_G1MULTIEXP = Address.precompiled(0xC);
 
   /** The constant BLS12_G2ADD. */
-  public static final Address BLS12_G2ADD = Address.precompiled(0xE);
-
-  /** The constant BLS12_G2MUL. */
-  public static final Address BLS12_G2MUL = Address.precompiled(0xF);
+  public static final Address BLS12_G2ADD = Address.precompiled(0xD);
 
   /** The constant BLS12_G2MULTIEXP. */
-  public static final Address BLS12_G2MULTIEXP = Address.precompiled(0x10);
+  public static final Address BLS12_G2MULTIEXP = Address.precompiled(0xE);
 
   /** The constant BLS12_PAIRING. */
-  public static final Address BLS12_PAIRING = Address.precompiled(0x11);
+  public static final Address BLS12_PAIRING = Address.precompiled(0xF);
 
   /** The constant BLS12_MAP_FP_TO_G1. */
-  public static final Address BLS12_MAP_FP_TO_G1 = Address.precompiled(0x12);
+  public static final Address BLS12_MAP_FP_TO_G1 = Address.precompiled(0x10);
 
   /** The constant BLS12_MAP_FP2_TO_G2. */
-  public static final Address BLS12_MAP_FP2_TO_G2 = Address.precompiled(0x13);
+  public static final Address BLS12_MAP_FP2_TO_G2 = Address.precompiled(0x11);
 
   /** The constant ZERO. */
   public static final Address ZERO = Address.fromHexString("0x0");
@@ -227,16 +222,6 @@ public class Address extends DelegatingBytes {
   }
 
   /**
-   * Privacy precompiled address.
-   *
-   * @param value the value
-   * @return the address
-   */
-  public static Address privacyPrecompiled(final int value) {
-    return precompiled(value);
-  }
-
-  /**
    * Address of the created contract.
    *
    * <p>This implement equation (86) in Section 7 of the Yellow Paper (rev. a91c29c).
@@ -258,28 +243,6 @@ public class Address extends DelegatingBytes {
   }
 
   /**
-   * Address of the created private contract.
-   *
-   * @param senderAddress the address of the transaction sender.
-   * @param nonce the nonce of this transaction.
-   * @param privacyGroupId hash of participants list ordered from Enclave response.
-   * @return The generated address of the created private contract.
-   */
-  public static Address privateContractAddress(
-      final Address senderAddress, final long nonce, final Bytes privacyGroupId) {
-    return Address.extract(
-        keccak256(
-            RLP.encode(
-                out -> {
-                  out.startList();
-                  out.writeBytes(senderAddress);
-                  out.writeLongScalar(nonce);
-                  out.writeBytes(privacyGroupId);
-                  out.endList();
-                })));
-  }
-
-  /**
    * Returns the hash of the address. Backed by a cache for performance reasons.
    *
    * @return the hash of the address.
@@ -290,5 +253,17 @@ public class Address extends DelegatingBytes {
     } catch (ExecutionException e) {
       return Hash.hash(this);
     }
+  }
+
+  @Override
+  public boolean equals(final Object obj) {
+    if (obj == this) {
+      return true;
+    }
+    if (!(obj instanceof Address)) {
+      return false;
+    }
+    Address other = (Address) obj;
+    return Arrays.equals(this.toArrayUnsafe(), other.toArrayUnsafe());
   }
 }

@@ -16,9 +16,8 @@ package org.hyperledger.besu.ethereum;
 
 import org.hyperledger.besu.ethereum.chain.BadBlockManager;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
-import org.hyperledger.besu.ethereum.core.Synchronizer;
-import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateArchive;
+import org.hyperledger.besu.plugin.ServiceManager;
 
 import java.util.Optional;
 
@@ -30,10 +29,9 @@ import java.util.Optional;
 public class ProtocolContext {
   private final MutableBlockchain blockchain;
   private final WorldStateArchive worldStateArchive;
-  private final BadBlockManager badBlockManager;
   private final ConsensusContext consensusContext;
-
-  private Optional<Synchronizer> synchronizer;
+  private final BadBlockManager badBlockManager;
+  private final ServiceManager serviceManager;
 
   /**
    * Constructs a new ProtocolContext with the given blockchain, world state archive, consensus
@@ -41,61 +39,21 @@ public class ProtocolContext {
    *
    * @param blockchain the blockchain of the protocol context
    * @param worldStateArchive the world state archive of the protocol context
-   * @param consensusContext the consensus context of the protocol context
+   * @param consensusContext the consensus context
    * @param badBlockManager the bad block manager of the protocol context
+   * @param serviceManager plugin service manager
    */
-  public ProtocolContext(
+  protected ProtocolContext(
       final MutableBlockchain blockchain,
       final WorldStateArchive worldStateArchive,
       final ConsensusContext consensusContext,
-      final BadBlockManager badBlockManager) {
+      final BadBlockManager badBlockManager,
+      final ServiceManager serviceManager) {
     this.blockchain = blockchain;
     this.worldStateArchive = worldStateArchive;
     this.consensusContext = consensusContext;
-    this.synchronizer = Optional.empty();
     this.badBlockManager = badBlockManager;
-  }
-
-  /**
-   * Initializes a new ProtocolContext with the given blockchain, world state archive, protocol
-   * schedule, consensus context factory, and bad block manager.
-   *
-   * @param blockchain the blockchain of the protocol context
-   * @param worldStateArchive the world state archive of the protocol context
-   * @param protocolSchedule the protocol schedule of the protocol context
-   * @param consensusContextFactory the consensus context factory of the protocol context
-   * @param badBlockManager the bad block manager of the protocol context
-   * @return the initialized ProtocolContext
-   */
-  public static ProtocolContext init(
-      final MutableBlockchain blockchain,
-      final WorldStateArchive worldStateArchive,
-      final ProtocolSchedule protocolSchedule,
-      final ConsensusContextFactory consensusContextFactory,
-      final BadBlockManager badBlockManager) {
-    return new ProtocolContext(
-        blockchain,
-        worldStateArchive,
-        consensusContextFactory.create(blockchain, worldStateArchive, protocolSchedule),
-        badBlockManager);
-  }
-
-  /**
-   * Gets the synchronizer of the protocol context.
-   *
-   * @return the synchronizer of the protocol context
-   */
-  public Optional<Synchronizer> getSynchronizer() {
-    return synchronizer;
-  }
-
-  /**
-   * Sets the synchronizer of the protocol context.
-   *
-   * @param synchronizer the synchronizer to set
-   */
-  public void setSynchronizer(final Optional<Synchronizer> synchronizer) {
-    this.synchronizer = synchronizer;
+    this.serviceManager = serviceManager;
   }
 
   /**
@@ -126,6 +84,15 @@ public class ProtocolContext {
   }
 
   /**
+   * Gets the plugin service manager from protocol context.
+   *
+   * @return the serviceManager manager from protocol context
+   */
+  public ServiceManager getPluginServiceManager() {
+    return serviceManager;
+  }
+
+  /**
    * Gets the consensus context of the protocol context.
    *
    * @param <C> the type of the consensus context
@@ -133,6 +100,19 @@ public class ProtocolContext {
    * @return the consensus context of the protocol context
    */
   public <C extends ConsensusContext> C getConsensusContext(final Class<C> klass) {
+    return consensusContext.as(klass);
+  }
+
+  /**
+   * Gets the consensus context of the protocol context.
+   *
+   * @param <C> the type of the consensus context
+   * @param klass the klass
+   * @param blockNumber the block number
+   * @return the consensus context of the protocol context
+   */
+  public <C extends ConsensusContext> C getConsensusContext(
+      final Class<C> klass, final long blockNumber) {
     return consensusContext.as(klass);
   }
 
@@ -147,5 +127,98 @@ public class ProtocolContext {
     return Optional.ofNullable(consensusContext)
         .filter(c -> klass.isAssignableFrom(c.getClass()))
         .map(klass::cast);
+  }
+
+  /**
+   * Builder for creating instances of {@link ProtocolContext}. This builder class follows the
+   * builder pattern to provide a flexible and clear way to construct {@link ProtocolContext}
+   * objects with potentially complex configurations.
+   *
+   * <p>Usage example:
+   *
+   * <pre>
+   * ProtocolContext protocolContext = new ProtocolContext.Builder()
+   *     .withBlockchain(new MutableBlockchainImpl())
+   *     .withWorldStateArchive(new WorldStateArchiveImpl())
+   *     .withConsensusContext(new ConsensusContextImpl())
+   *     .withBadBlockManager(new BadBlockManagerImpl())
+   *     .withServiceManager(new ServiceManager.SimpleServiceManager())
+   *     .build();
+   * </pre>
+   */
+  public static class Builder {
+    private MutableBlockchain blockchain;
+    private WorldStateArchive worldStateArchive;
+    private ConsensusContext consensusContext;
+    private BadBlockManager badBlockManager = new BadBlockManager();
+    private ServiceManager serviceManager = new ServiceManager.SimpleServiceManager();
+
+    /** Default constructor. linter requires javadoc. */
+    public Builder() {}
+
+    /**
+     * Sets the {@link MutableBlockchain} for the {@link ProtocolContext}.
+     *
+     * @param blockchain the blockchain to be used in the protocol context.
+     * @return the builder instance for chaining.
+     */
+    public Builder withBlockchain(final MutableBlockchain blockchain) {
+      this.blockchain = blockchain;
+      return this;
+    }
+
+    /**
+     * Sets the {@link WorldStateArchive} for the {@link ProtocolContext}.
+     *
+     * @param worldStateArchive the world state archive to be used in the protocol context.
+     * @return the builder instance for chaining.
+     */
+    public Builder withWorldStateArchive(final WorldStateArchive worldStateArchive) {
+      this.worldStateArchive = worldStateArchive;
+      return this;
+    }
+
+    /**
+     * Sets the {@link ConsensusContext} for the {@link ProtocolContext}.
+     *
+     * @param consensusContext the consensus context to be used in the protocol context.
+     * @return the builder instance for chaining.
+     */
+    public Builder withConsensusContext(final ConsensusContext consensusContext) {
+      this.consensusContext = consensusContext;
+      return this;
+    }
+
+    /**
+     * Sets the {@link BadBlockManager} for the {@link ProtocolContext}.
+     *
+     * @param badBlockManager the bad block manager to be used in the protocol context.
+     * @return the builder instance for chaining.
+     */
+    public Builder withBadBlockManager(final BadBlockManager badBlockManager) {
+      this.badBlockManager = badBlockManager;
+      return this;
+    }
+
+    /**
+     * Sets the {@link ServiceManager} for the {@link ProtocolContext}.
+     *
+     * @param serviceManager the service manager to be used in the protocol context.
+     * @return the builder instance for chaining.
+     */
+    public Builder withServiceManager(final ServiceManager serviceManager) {
+      this.serviceManager = serviceManager;
+      return this;
+    }
+
+    /**
+     * Constructs a new {@link ProtocolContext} using the currently configured properties.
+     *
+     * @return a new {@link ProtocolContext} instance with the specified properties.
+     */
+    public ProtocolContext build() {
+      return new ProtocolContext(
+          blockchain, worldStateArchive, consensusContext, badBlockManager, serviceManager);
+    }
   }
 }

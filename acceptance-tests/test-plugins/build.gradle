@@ -2,7 +2,7 @@
 dependencies {
   api 'org.slf4j:slf4j-api'
 
-  implementation project(':besu')
+  implementation project(':app')
   implementation project(':crypto:algorithms')
   implementation project(':datatypes')
   implementation project(':ethereum:core')
@@ -14,8 +14,6 @@ dependencies {
 
   testImplementation 'org.assertj:assertj-core'
   testImplementation 'org.junit.jupiter:junit-jupiter'
-
-  testRuntimeOnly 'org.junit.vintage:junit-vintage-engine'
 }
 
 task testPluginsJar(type: Jar) {

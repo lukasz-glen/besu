@@ -36,8 +36,7 @@ import org.hyperledger.besu.ethereum.chain.BlockAddedObserver;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.BlockHeaderTestFixture;
-import org.hyperledger.besu.ethereum.core.MiningParameters;
-import org.hyperledger.besu.ethereum.core.PrivacyParameters;
+import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.core.Synchronizer;
 import org.hyperledger.besu.ethereum.eth.EthProtocolConfiguration;
 import org.hyperledger.besu.ethereum.eth.manager.EthContext;
@@ -112,7 +111,6 @@ public class TransactionPoolFactoryTest {
     final NodeMessagePermissioningProvider nmpp = (destinationEnode, code) -> true;
     ethPeers =
         new EthPeers(
-            "ETH",
             () -> protocolSpec,
             TestClock.fixed(),
             new NoOpMetricsSystem(),
@@ -123,7 +121,7 @@ public class TransactionPoolFactoryTest {
             25,
             false,
             SyncMode.SNAP,
-            new ForkIdManager(blockchain, Collections.emptyList(), Collections.emptyList(), false));
+            new ForkIdManager(blockchain, Collections.emptyList(), Collections.emptyList()));
     when(ethContext.getEthMessages()).thenReturn(ethMessages);
     when(ethContext.getEthPeers()).thenReturn(ethPeers);
 
@@ -373,12 +371,11 @@ public class TransactionPoolFactoryTest {
     schedule =
         new ProtocolScheduleBuilder(
                 config,
-                DEFAULT_CHAIN_ID,
+                Optional.of(DEFAULT_CHAIN_ID),
                 ProtocolSpecAdapters.create(0, Function.identity()),
-                PrivacyParameters.DEFAULT,
                 false,
                 EvmConfiguration.DEFAULT,
-                MiningParameters.MINING_DISABLED,
+                MiningConfiguration.MINING_DISABLED,
                 new BadBlockManager(),
                 false,
                 new NoOpMetricsSystem())
@@ -413,7 +410,8 @@ public class TransactionPoolFactoryTest {
         transactionsMessageSender,
         newPooledTransactionHashesMessageSender,
         new BlobCache(),
-        MiningParameters.newDefault());
+        MiningConfiguration.newDefault(),
+        false);
   }
 
   private TransactionPool createAndEnableTransactionPool(

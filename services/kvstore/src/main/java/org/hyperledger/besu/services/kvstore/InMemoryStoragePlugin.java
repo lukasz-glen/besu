@@ -14,8 +14,8 @@
  */
 package org.hyperledger.besu.services.kvstore;
 
-import org.hyperledger.besu.plugin.BesuContext;
 import org.hyperledger.besu.plugin.BesuPlugin;
+import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.BesuConfiguration;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.StorageService;
@@ -36,15 +36,14 @@ import org.slf4j.LoggerFactory;
 public class InMemoryStoragePlugin implements BesuPlugin {
 
   private static final Logger LOG = LoggerFactory.getLogger(InMemoryStoragePlugin.class);
-  private BesuContext context;
+  private ServiceManager context;
   private InMemoryKeyValueStorageFactory factory;
-  private InMemoryKeyValueStorageFactory privacyFactory;
 
   /** Default constructor */
   public InMemoryStoragePlugin() {}
 
   @Override
-  public void register(final BesuContext context) {
+  public void register(final ServiceManager context) {
     LOG.debug("Registering plugin");
     this.context = context;
 
@@ -69,20 +68,13 @@ public class InMemoryStoragePlugin implements BesuPlugin {
       factory.close();
       factory = null;
     }
-
-    if (privacyFactory != null) {
-      privacyFactory.close();
-      privacyFactory = null;
-    }
   }
 
   private void createAndRegister(final StorageService service) {
 
     factory = new InMemoryKeyValueStorageFactory("memory");
-    privacyFactory = new InMemoryKeyValueStorageFactory("memory-privacy");
 
     service.registerKeyValueStorage(factory);
-    service.registerKeyValueStorage(privacyFactory);
   }
 
   private void createFactoriesAndRegisterWithStorageService() {

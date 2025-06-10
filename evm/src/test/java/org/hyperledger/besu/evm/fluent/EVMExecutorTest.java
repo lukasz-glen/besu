@@ -35,9 +35,9 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import javax.annotation.Nonnull;
 
 import com.google.common.collect.MultimapBuilder;
+import jakarta.validation.constraints.NotNull;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
@@ -49,7 +49,7 @@ class EVMExecutorTest {
   @Test
   void currentEVM() {
     var subject = EVMExecutor.evm();
-    assertThat(subject.getEVMVersion()).isEqualTo(EvmSpecVersion.CANCUN);
+    assertThat(subject.getEVMVersion()).isEqualTo(EvmSpecVersion.PRAGUE);
   }
 
   @ParameterizedTest
@@ -182,7 +182,7 @@ class EVMExecutorTest {
             .number(1)
             .timestamp(100L)
             .gasLimit(15_000_000L)
-            .blockHashLookup(number -> Hash.ZERO)
+            .blockHashLookup((__, ___) -> Hash.ZERO)
             .versionedHashes(Optional.empty())
             .precompileContractRegistry(new PrecompileContractRegistry())
             .requireDeposit(false)
@@ -213,7 +213,7 @@ class EVMExecutorTest {
     assertThat(result).isNotNull();
   }
 
-  @Nonnull
+  @NotNull
   private static SimpleWorld createSimpleWorld() {
     SimpleWorld simpleWorld = new SimpleWorld();
 

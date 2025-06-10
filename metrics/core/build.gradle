@@ -16,7 +16,7 @@
 apply plugin: 'java-library'
 
 jar {
-  archiveBaseName = 'besu-metrics-core'
+  archiveBaseName = calculateArtifactId(project)
   manifest {
     attributes(
       'Specification-Title': archiveBaseName,
@@ -27,13 +27,6 @@ jar {
       )
   }
 }
-
-publishing {
-  publications {
-    mavenJava(MavenPublication) { artifactId 'metrics-core' }
-  }
-}
-
 
 dependencies {
   implementation project(':plugin-api')
@@ -54,11 +47,14 @@ dependencies {
   implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
   implementation 'io.opentelemetry:opentelemetry-sdk-extension-autoconfigure'
   implementation 'io.opentelemetry.semconv:opentelemetry-semconv'
+  implementation 'io.opentelemetry.semconv:opentelemetry-semconv-incubating'
 
-  implementation 'io.prometheus:simpleclient'
-  implementation 'io.prometheus:simpleclient_common'
-  implementation 'io.prometheus:simpleclient_hotspot'
-  implementation 'io.prometheus:simpleclient_pushgateway'
+  implementation 'io.prometheus:prometheus-metrics-core'
+  implementation 'io.prometheus:prometheus-metrics-instrumentation-guava'
+  implementation 'io.prometheus:prometheus-metrics-instrumentation-jvm'
+  implementation 'io.prometheus:prometheus-metrics-exporter-httpserver'
+  implementation 'io.prometheus:prometheus-metrics-exporter-pushgateway'
+
   implementation 'io.vertx:vertx-core'
   implementation 'io.vertx:vertx-web'
 

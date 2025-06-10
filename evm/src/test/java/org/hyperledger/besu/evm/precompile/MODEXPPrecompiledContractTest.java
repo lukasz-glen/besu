@@ -32,9 +32,9 @@ class MODEXPPrecompiledContractTest {
   @Mock private MessageFrame messageFrame;
 
   private final BigIntegerModularExponentiationPrecompiledContract byzantiumContract =
-      new BigIntegerModularExponentiationPrecompiledContract(new ByzantiumGasCalculator());
+      BigIntegerModularExponentiationPrecompiledContract.byzantium(new ByzantiumGasCalculator());
   private final BigIntegerModularExponentiationPrecompiledContract berlinContract =
-      new BigIntegerModularExponentiationPrecompiledContract(new BerlinGasCalculator());
+      BigIntegerModularExponentiationPrecompiledContract.byzantium(new BerlinGasCalculator());
 
   MODEXPPrecompiledContractTest() {}
 
@@ -179,10 +179,9 @@ class MODEXPPrecompiledContractTest {
     assumeThat(precompiledResult).isNotNull();
     final Bytes input = Bytes.fromHexString(inputString);
     final Bytes expected = Bytes.fromHexString(precompiledResult);
-    assertThat(byzantiumContract.computePrecompile(input, messageFrame).getOutput())
+    assertThat(byzantiumContract.computePrecompile(input, messageFrame).output())
         .isEqualTo(expected);
-    assertThat(berlinContract.computePrecompile(input, messageFrame).getOutput())
-        .isEqualTo(expected);
+    assertThat(berlinContract.computePrecompile(input, messageFrame).output()).isEqualTo(expected);
   }
 
   @ParameterizedTest

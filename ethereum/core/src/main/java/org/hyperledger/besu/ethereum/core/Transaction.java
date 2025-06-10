@@ -26,12 +26,9 @@ import org.hyperledger.besu.crypto.SignatureAlgorithm;
 import org.hyperledger.besu.crypto.SignatureAlgorithmFactory;
 import org.hyperledger.besu.datatypes.AccessListEntry;
 import org.hyperledger.besu.datatypes.Address;
-import org.hyperledger.besu.datatypes.Blob;
-import org.hyperledger.besu.datatypes.BlobsWithCommitments;
+import org.hyperledger.besu.datatypes.BlobType;
 import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Hash;
-import org.hyperledger.besu.datatypes.KZGCommitment;
-import org.hyperledger.besu.datatypes.KZGProof;
 import org.hyperledger.besu.datatypes.Sha256Hash;
 import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.VersionedHash;
@@ -42,6 +39,10 @@ import org.hyperledger.besu.ethereum.core.encoding.CodeDelegationTransactionEnco
 import org.hyperledger.besu.ethereum.core.encoding.EncodingContext;
 import org.hyperledger.besu.ethereum.core.encoding.TransactionDecoder;
 import org.hyperledger.besu.ethereum.core.encoding.TransactionEncoder;
+import org.hyperledger.besu.ethereum.core.kzg.Blob;
+import org.hyperledger.besu.ethereum.core.kzg.BlobsWithCommitments;
+import org.hyperledger.besu.ethereum.core.kzg.KZGCommitment;
+import org.hyperledger.besu.ethereum.core.kzg.KZGProof;
 import org.hyperledger.besu.ethereum.rlp.BytesValueRLPOutput;
 import org.hyperledger.besu.ethereum.rlp.RLP;
 import org.hyperledger.besu.ethereum.rlp.RLPInput;
@@ -1161,7 +1162,7 @@ public class Transaction
    * Creates a copy of this transaction that does not share any underlying byte array.
    *
    * <p>This is useful in case the transaction is built from a block body and fields, like to or
-   * payload, are wrapping (and so keeping references) sections of the large RPL encoded block body,
+   * payload, are wrapping (and so keeping references) sections of the large RLP encoded block body,
    * and we plan to keep the transaction around for some time, like in the txpool in case of a
    * reorg, and do not want to keep all the block body in memory for a long time, but only the
    * actual transaction.
@@ -1246,9 +1247,12 @@ public class Transaction
         blobsWithCommitments.getKzgProofs().stream()
             .map(proof -> new KZGProof(proof.getData().copy()))
             .toList();
-
     return new BlobsWithCommitments(
-        detachedCommitments, detachedBlobs, detachedProofs, versionedHashes);
+        blobsWithCommitments.getBlobType(),
+        detachedCommitments,
+        detachedBlobs,
+        detachedProofs,
+        versionedHashes);
   }
 
   public static class Builder {
@@ -1468,6 +1472,7 @@ public class Transaction
     }
 
     public Builder kzgBlobs(
+        final BlobType blobType,
         final List<KZGCommitment> kzgCommitments,
         final List<Blob> blobs,
         final List<KZGProof> kzgProofs) {
@@ -1478,7 +1483,7 @@ public class Transaction
                 .toList();
       }
       this.blobsWithCommitments =
-          new BlobsWithCommitments(kzgCommitments, blobs, kzgProofs, versionedHashes);
+          new BlobsWithCommitments(blobType, kzgCommitments, blobs, kzgProofs, versionedHashes);
       return this;
     }
 

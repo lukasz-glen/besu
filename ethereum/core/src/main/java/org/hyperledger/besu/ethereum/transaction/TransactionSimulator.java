@@ -39,6 +39,7 @@ import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpec;
 import org.hyperledger.besu.ethereum.mainnet.TransactionValidationParams;
 import org.hyperledger.besu.ethereum.processing.TransactionProcessingResult;
+import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.worldview.BonsaiWorldState;
 import org.hyperledger.besu.ethereum.vm.DebugOperationTracer;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateArchive;
 import org.hyperledger.besu.evm.account.Account;
@@ -49,12 +50,13 @@ import org.hyperledger.besu.evm.worldstate.WorldUpdater;
 
 import java.math.BigInteger;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
-import javax.annotation.Nonnull;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Suppliers;
+import jakarta.validation.constraints.NotNull;
 import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.units.bigints.UInt256;
 import org.slf4j.Logger;
@@ -288,7 +290,9 @@ public class TransactionSimulator {
     try (final MutableWorldState ws = getWorldState(header)) {
 
       WorldUpdater updater = getEffectiveWorldStateUpdater(ws);
-
+      if (ws instanceof BonsaiWorldState bonsaiWorldState) {
+        bonsaiWorldState.disableCacheMerkleTrieLoader();
+      }
       // in order to trace the state diff we need to make sure that
       // the world updater always has a parent
       if (operationTracer instanceof DebugOperationTracer) {
@@ -346,7 +350,7 @@ public class TransactionSimulator {
                     "Public world state not available for block " + header.toLogString()));
   }
 
-  @Nonnull
+  @NotNull
   public Optional<TransactionSimulatorResult> processWithWorldUpdater(
       final CallParameter callParams,
       final Optional<StateOverrideMap> maybeStateOverrides,
@@ -357,7 +361,8 @@ public class TransactionSimulator {
       final Address miningBeneficiary) {
 
     final long simulationGasCap =
-        calculateSimulationGasCap(callParams.getGasLimit(), processableHeader.getGasLimit());
+        calculateSimulationGasCap(
+            processableHeader, callParams.getGas(), processableHeader.getGasLimit());
 
     MainnetTransactionProcessor transactionProcessor =
         simulationTransactionProcessorFactory.getTransactionProcessor(
@@ -394,7 +399,7 @@ public class TransactionSimulator {
         () -> FAKE_SIGNATURE);
   }
 
-  @Nonnull
+  @NotNull
   public Optional<TransactionSimulatorResult> processWithWorldUpdater(
       final CallParameter callParams,
       final Optional<StateOverrideMap> maybeStateOverrides,
@@ -410,8 +415,7 @@ public class TransactionSimulator {
       final Supplier<SECPSignature> signatureSupplier) {
 
     final ProtocolSpec protocolSpec = protocolSchedule.getByBlockHeader(processableHeader);
-    final Address senderAddress =
-        callParams.getFrom() != null ? callParams.getFrom() : DEFAULT_FROM;
+    final Address senderAddress = callParams.getSender().orElse(DEFAULT_FROM);
 
     final ProcessableBlockHeader blockHeaderToProcess;
     if (transactionValidationParams.isAllowExceedingBalance()
@@ -466,10 +470,9 @@ public class TransactionSimulator {
             blockHeaderToProcess,
             transaction,
             miningBeneficiary,
-            blockHashLookup,
-            false,
-            transactionValidationParams,
             operationTracer,
+            blockHashLookup,
+            transactionValidationParams,
             blobGasPrice);
 
     return Optional.of(new TransactionSimulatorResult(transaction, result));
@@ -501,11 +504,14 @@ public class TransactionSimulator {
                             UInt256.fromHexString(key), UInt256.fromHexString(value))));
   }
 
-  public long calculateSimulationGasCap(final long userProvidedGasLimit, final long blockGasLimit) {
+  public long calculateSimulationGasCap(
+      final ProcessableBlockHeader blockHeader,
+      final OptionalLong maybeUserProvidedGasLimit,
+      final long blockGasLimit) {
     final long simulationGasCap;
 
-    // when not set gas limit is -1
-    if (userProvidedGasLimit >= 0) {
+    if (maybeUserProvidedGasLimit.isPresent()) {
+      long userProvidedGasLimit = maybeUserProvidedGasLimit.getAsLong();
       if (rpcGasCap > 0 && userProvidedGasLimit > rpcGasCap) {
         LOG.trace(
             "User provided gas limit {} is bigger than the value of rpc-gas-cap {}, setting simulation gas cap to the latter",
@@ -517,23 +523,26 @@ public class TransactionSimulator {
         simulationGasCap = userProvidedGasLimit;
       }
     } else {
+      final long txGasLimitCap =
+          protocolSchedule
+              .getByBlockHeader(blockHeader)
+              .getGasLimitCalculator()
+              .transactionGasLimitCap();
       if (rpcGasCap > 0) {
-        if (blockGasLimit > 0) {
-          LOG.trace(
-              "No user provided gas limit, setting simulation gas cap to the value of min(rpc-gas-cap,blockGasLimit) {}",
-              rpcGasCap);
-          simulationGasCap = Math.min(rpcGasCap, blockGasLimit);
-        } else {
-          LOG.trace(
-              "No user provided gas limit, setting simulation gas cap to the value of rpc-gas-cap {}",
-              rpcGasCap);
-          simulationGasCap = rpcGasCap;
-        }
-      } else {
-        simulationGasCap = blockGasLimit;
+        simulationGasCap = Math.min(rpcGasCap, Math.min(txGasLimitCap, blockGasLimit));
         LOG.trace(
-            "No user provided gas limit and rpc-gas-cap options is not set, setting simulation gas cap to block gas limit {}",
-            blockGasLimit);
+            "No user provided gas limit, setting simulation gas cap to the value of min(rpc-gas-cap={},txGasLimitCap={},blockGasLimit={})={}",
+            rpcGasCap,
+            txGasLimitCap,
+            blockGasLimit,
+            simulationGasCap);
+      } else {
+        simulationGasCap = Math.min(txGasLimitCap, blockGasLimit);
+        LOG.trace(
+            "No user provided gas limit and rpc-gas-cap options is not set, setting simulation gas cap to min(txGasLimitCap={},blockGasLimit={})={}",
+            txGasLimitCap,
+            blockGasLimit,
+            simulationGasCap);
       }
     }
     return simulationGasCap;
@@ -549,18 +558,19 @@ public class TransactionSimulator {
       final Wei blobGasPrice,
       final Supplier<SECPSignature> signatureSupplier) {
 
-    final Wei value = callParams.getValue() != null ? callParams.getValue() : Wei.ZERO;
-    final Bytes payload = callParams.getPayload() != null ? callParams.getPayload() : Bytes.EMPTY;
+    final Wei value = callParams.getValue().orElse(Wei.ZERO);
+    final Bytes payload = callParams.getPayload().orElse(Bytes.EMPTY);
 
     final Transaction.Builder transactionBuilder =
         Transaction.builder()
             .nonce(nonce)
             .gasLimit(gasLimit)
-            .to(callParams.getTo())
             .sender(senderAddress)
             .value(value)
             .payload(payload)
             .signature(signatureSupplier.get());
+
+    callParams.getTo().ifPresent(transactionBuilder::to);
 
     // Set access list if present
     callParams.getAccessList().ifPresent(transactionBuilder::accessList);
@@ -577,7 +587,7 @@ public class TransactionSimulator {
       maxPriorityFeePerGas = Wei.ZERO;
       maxFeePerBlobGas = Wei.ZERO;
     } else {
-      gasPrice = callParams.getGasPrice() != null ? callParams.getGasPrice() : Wei.ZERO;
+      gasPrice = callParams.getGasPrice().orElse(Wei.ZERO);
       maxFeePerGas = callParams.getMaxFeePerGas().orElse(gasPrice);
       maxPriorityFeePerGas = callParams.getMaxPriorityFeePerGas().orElse(gasPrice);
       maxFeePerBlobGas = callParams.getMaxFeePerBlobGas().orElse(blobGasPrice);
@@ -668,7 +678,7 @@ public class TransactionSimulator {
     // Return true if all gas price parameters are empty
     if (callParams.getMaxPriorityFeePerGas().isEmpty()
         && callParams.getMaxFeePerGas().isEmpty()
-        && callParams.getGasPrice() == null) {
+        && callParams.getGasPrice().isEmpty()) {
       return true;
     }
 

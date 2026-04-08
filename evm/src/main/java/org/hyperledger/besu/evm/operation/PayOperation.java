@@ -25,6 +25,7 @@ import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.Words;
 
@@ -62,6 +63,8 @@ public class PayOperation extends AbstractOperation {
     final Account recipient = getAccount(to, frame);
 
     final boolean accountIsWarm = frame.warmUpAddress(to);
+    final boolean addressAccessWarm = accountIsWarm || gasCalculator().isPrecompile(to);
+    frame.getOpcodeExecutionCounts()[addressAccessWarm ? TxValues.ACCESS_ADDRESS_WARM_COUNT : TxValues.ACCESS_ADDRESS_COLD_COUNT]++;
 
     final long cost = cost(to, hasValue, recipient, accountIsWarm);
     if (frame.getRemainingGas() < cost) {

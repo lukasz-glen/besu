@@ -19,6 +19,7 @@ import static org.hyperledger.besu.crypto.Blake2bfMessageDigest.Blake2bfDigest.M
 
 import org.hyperledger.besu.crypto.Hash;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
@@ -83,6 +84,9 @@ public class BLAKE2BFPrecompileContract extends AbstractPrecompiledContract {
       return PrecompileContractResult.halt(
           null, Optional.of(ExceptionalHaltReason.PRECOMPILE_ERROR));
     }
+    final byte[] roundsBytes = copyOfRange(input.toArrayUnsafe(), 0, 4);
+    final BigInteger rounds = new BigInteger(1, roundsBytes);
+    messageFrame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED] += rounds.intValueExact();
     PrecompileInputResultTuple res = null;
     Integer cacheKey = null;
     if (enableResultCaching) {

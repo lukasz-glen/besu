@@ -221,6 +221,7 @@ public class EVM {
     var operationTracer = tracing == OperationTracer.NO_TRACING ? null : tracing;
     byte[] code = frame.getCode().getBytes().toArrayUnsafe();
     Operation[] operationArray = operations.getOperations();
+    final int[] opcodeExecutionCounts = frame.getOpcodeExecutionCounts();
     while (frame.getState() == MessageFrame.State.CODE_EXECUTING) {
       Operation currentOperation;
       int opcode;
@@ -232,6 +233,7 @@ public class EVM {
         opcode = 0;
         currentOperation = endOfScriptStop;
       }
+      opcodeExecutionCounts[opcode]++;
       frame.setCurrentOperation(currentOperation);
       if (operationTracer != null) {
         operationTracer.tracePreExecution(frame);

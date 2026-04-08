@@ -21,6 +21,7 @@ import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.Words;
 import org.hyperledger.besu.evm.log.TransferLogEmitter;
@@ -80,6 +81,7 @@ public class SelfDestructOperation extends AbstractOperation {
     final Address beneficiaryAddress = Words.toAddress(frame.popStackItem());
     final boolean beneficiaryIsWarm =
         frame.warmUpAddress(beneficiaryAddress) || gasCalculator().isPrecompile(beneficiaryAddress);
+    frame.getOpcodeExecutionCounts()[beneficiaryIsWarm ? TxValues.ACCESS_ADDRESS_WARM_COUNT : TxValues.ACCESS_ADDRESS_COLD_COUNT]++;
     final long beneficiaryAccessCost =
         beneficiaryIsWarm ? 0L : gasCalculator().getColdAccountAccessCost();
     final long staticCost =

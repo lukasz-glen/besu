@@ -16,7 +16,9 @@ package org.hyperledger.besu.evm.precompile;
 
 import org.hyperledger.besu.crypto.Hash;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import static org.hyperledger.besu.evm.internal.Words.numWords;
 
 import jakarta.validation.constraints.NotNull;
 import org.apache.tuweni.bytes.Bytes;
@@ -43,6 +45,7 @@ public class RIPEMD160PrecompiledContract extends AbstractPrecompiledContract {
   @Override
   public PrecompileContractResult computePrecompile(
       final Bytes input, @NotNull final MessageFrame messageFrame) {
+    messageFrame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_RIPEMD160_WORDS_PROCESSED] += numWords(input);
     return PrecompileContractResult.success(Bytes32.leftPad(Hash.ripemd160(input)));
   }
 }

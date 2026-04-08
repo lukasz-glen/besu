@@ -19,6 +19,7 @@ import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
 import java.util.function.Supplier;
@@ -84,6 +85,7 @@ public class SStoreOperation extends AbstractOperation {
 
     final Address address = account.getAddress();
     final boolean slotIsWarm = frame.warmUpStorage(address, key);
+    frame.getOpcodeExecutionCounts()[slotIsWarm ? TxValues.ACCESS_STORAGE_WARM_COUNT : TxValues.ACCESS_STORAGE_COLD_COUNT]++;
     final Supplier<UInt256> currentValueSupplier =
         Suppliers.memoize(() -> getStorageValue(account, key, frame));
     final Supplier<UInt256> originalValueSupplier =

@@ -240,6 +240,12 @@ public class MessageFrame {
   private long undoMark;
 
   /**
+   * Per-message usage vector: opcode counts, call metadata, EXP operand size, and per-precompile
+   * invocation counts ({@link TxValues#CALL_OPCODE_USAGE_VECTOR_LENGTH} elements).
+   */
+  private final int[] opcodeExecutionCounts;
+
+  /**
    * Builder builder.
    *
    * @return the builder
@@ -264,9 +270,11 @@ public class MessageFrame {
       final Map<String, Object> contextVariables,
       final Optional<Bytes> revertReason,
       final TxValues txValues,
+      final int[] opcodeExecutionCounts,
       final Optional<Eip7928AccessList> eip7928AccessList) {
 
     this.txValues = txValues;
+    this.opcodeExecutionCounts = opcodeExecutionCounts;
     this.type = type;
     this.worldUpdater = worldUpdater;
     this.gasRemaining = initialGas;
@@ -1192,6 +1200,9 @@ public class MessageFrame {
 
   /** Performs updates based on the message frame's execution. */
   public void notifyCompletion() {
+    opcodeExecutionCounts[TxValues.CALL_SUCCESS] = state == State.COMPLETED_SUCCESS ? 1 : 0;
+    opcodeExecutionCounts[TxValues.CALL_GAS_USED] -= (int) gasRemaining;
+    opcodeExecutionCounts[TxValues.CALL_MEMORY_WORD_SIZE] = memoryWordSize();
     completer.accept(this);
   }
 
@@ -1202,6 +1213,30 @@ public class MessageFrame {
    */
   public Deque<MessageFrame> getMessageFrameStack() {
     return txValues.messageFrameStack();
+  }
+
+  /**
+   * Returns per-message execution statistics for <em>this</em> frame only: opcode byte counts (0–255),
+   * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}),
+   * precompile-related slots ({@link TxValues#CALL_PRECOMPILE_BASE} … {@link
+   * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), and EIP-2929-style address access totals
+   * ({@link TxValues#ACCESS_ADDRESS_COLD_COUNT}, {@link TxValues#ACCESS_ADDRESS_WARM_COUNT}). Each
+   * nested call or contract creation has its own array of length {@link
+   * TxValues#CALL_OPCODE_USAGE_VECTOR_LENGTH}.
+   *
+   * @return mutable per-frame usage vector
+   */
+  public int[] getOpcodeExecutionCounts() {
+    return opcodeExecutionCounts;
+  }
+
+  /**
+   * Returns the transaction-scoped values shared by all frames in this transaction.
+   *
+   * <p>Includes the per-call opcode histograms list ({@link TxValues#perCallOpcodeUsage()}).
+   */
+  public TxValues getTxValues() {
+    return txValues;
   }
 
   /**
@@ -1774,6 +1809,8 @@ public class MessageFrame {
         parentMessageFrame.warmUpAddress(contract);
       }
 
+      final int[] opcodeExecutionCounts = newTxValues.allocateCallOpcodeExecutionCounts();
+
       MessageFrame messageFrame =
           new MessageFrame(
               type,
@@ -1791,6 +1828,7 @@ public class MessageFrame {
               contextVariables == null ? Map.of() : contextVariables,
               reason,
               newTxValues,
+              opcodeExecutionCounts,
               eip7928AccessList);
       newTxValues.messageFrameStack().addFirst(messageFrame);
       messageFrame.warmUpAddress(sender);
@@ -1800,6 +1838,7 @@ public class MessageFrame {
       for (var e : eip2930AccessListWarmStorage.entries()) {
         messageFrame.warmUpStorage(e.getKey(), e.getValue());
       }
+      opcodeExecutionCounts[TxValues.CALL_GAS_USED] = initialGas.intValue();
       return messageFrame;
     }
   }

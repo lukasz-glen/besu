@@ -23,10 +23,12 @@ import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.evm.blockhash.BlockHashLookup;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.HashBasedTable;
 import org.apache.tuweni.bytes.Bytes32;
@@ -56,6 +58,11 @@ import org.apache.tuweni.bytes.Bytes32;
  *     undone on revert
  * @param stateGasSpillBurned EIP-8037 accumulated state gas that spilled from reverted child
  *     frames; NOT undone on revert (permanent burn counter for block accounting)
+ * @param callOrdinalAllocator Monotonic ordinal assigned to each {@link MessageFrame} at creation
+ *     (0, 1, …) within this transaction
+ * @param perCallOpcodeUsage Copies of each frame's usage vector (opcodes, call metadata, and
+ *     per-precompile counts), indexed by creation ordinal; entries are appended as frames complete
+ *     (typically before {@code traceEndTransaction} runs, the root frame's slot is filled)
  */
 public record TxValues(
     BlockHashLookup blockHashLookup,
@@ -75,7 +82,27 @@ public record TxValues(
     UndoScalar<Long> gasRefunds,
     UndoScalar<Long> stateGasUsed,
     UndoScalar<Long> stateGasReservoir,
-    long[] stateGasSpillBurned) {
+    long[] stateGasSpillBurned,
+    AtomicInteger callOrdinalAllocator,
+    ArrayList<int[]> perCallOpcodeUsage) {
+
+  public static final int CALL_ORDINAL_IDX = 256;
+  public static final int CALL_GAS_USED = 257;
+  public static final int CALL_SUCCESS = 258; // 1 if the call succeeded, 0 if it failed
+  public static final int CALL_MEMORY_WORD_SIZE = 259;
+  public static final int EXP_OPERATION_BYTES = 260; // number of bytes of power in the EXP operation
+  public static final int CALL_PRECOMPILE_BASE = 260; // a precompile address is added, precompiles start with 0x1 so this is the same value as above
+  public static final int CALL_PRECOMPILE_OTHERS = 271;
+  public static final int CALL_PRECOMPILE_SHA256_WORDS_PROCESSED = 272;
+  public static final int CALL_PRECOMPILE_RIPEMD160_WORDS_PROCESSED = 273;
+  public static final int CALL_PRECOMPILE_ID_WORDS_PROCESSED = 274;
+  public static final int CALL_PRECOMPILE_EC_PAIRING_PARAMS_PROCESSED = 275;
+  public static final int CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED = 276;
+  public static final int ACCESS_ADDRESS_COLD_COUNT = 277;
+  public static final int ACCESS_ADDRESS_WARM_COUNT = 278;
+  public static final int ACCESS_STORAGE_COLD_COUNT = 279;
+  public static final int ACCESS_STORAGE_WARM_COUNT = 280;
+  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 281;
 
   /**
    * Creates a new TxValues for the initial (depth-0) frame of a transaction. EIP-8037 gas tracking
@@ -120,7 +147,22 @@ public record TxValues(
         new UndoScalar<>(0L),
         new UndoScalar<>(0L),
         new UndoScalar<>(0L),
-        new long[] {0L});
+        new long[] {0L},
+        new AtomicInteger(0),
+        new ArrayList<>());
+  }
+
+  /**
+   * Reserves the creation-order index for the next call in this transaction.
+   *
+   * @return opcode execution counts for the call being built (includes CALL_ORDINAL)
+   */
+  public int[] allocateCallOpcodeExecutionCounts() {
+    final int callOrdinal = callOrdinalAllocator.getAndIncrement();
+    final int[] opcodeExecutionCounts = new int[CALL_OPCODE_USAGE_VECTOR_LENGTH];
+    opcodeExecutionCounts[CALL_ORDINAL_IDX] = callOrdinal;
+    perCallOpcodeUsage.add(opcodeExecutionCounts);
+    return opcodeExecutionCounts;
   }
 
   /**

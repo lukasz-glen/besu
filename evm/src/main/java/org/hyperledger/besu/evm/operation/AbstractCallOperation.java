@@ -29,6 +29,7 @@ import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.frame.MessageFrame.State;
 import org.hyperledger.besu.evm.frame.SoftFailureReason;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
@@ -187,6 +188,7 @@ public abstract class AbstractCallOperation extends AbstractOperation {
 
     final Address to = to(frame);
     final boolean accountIsWarm = frame.warmUpAddress(to) || gasCalculator().isPrecompile(to);
+    frame.getOpcodeExecutionCounts()[accountIsWarm ? TxValues.ACCESS_ADDRESS_WARM_COUNT : TxValues.ACCESS_ADDRESS_COLD_COUNT]++;
     final long stipend = gas(frame);
     final long inputDataOffset = inputDataOffset(frame);
     final long inputDataLength = inputDataLength(frame);

@@ -22,6 +22,7 @@ import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.Words;
 
@@ -69,6 +70,7 @@ public class ExtCodeCopyOperation extends AbstractOperation {
 
     final boolean accountIsWarm =
         frame.warmUpAddress(address) || gasCalculator().isPrecompile(address);
+    frame.getOpcodeExecutionCounts()[accountIsWarm ? TxValues.ACCESS_ADDRESS_WARM_COUNT : TxValues.ACCESS_ADDRESS_COLD_COUNT]++;
     final long cost = cost(frame, memOffset, numBytes, accountIsWarm);
 
     if (frame.getRemainingGas() < cost) {

@@ -21,6 +21,7 @@ import org.hyperledger.besu.evm.ModificationNotAllowedException;
 import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.log.TransferLogEmitter;
 import org.hyperledger.besu.evm.precompile.PrecompileContractRegistry;
 import org.hyperledger.besu.evm.precompile.PrecompiledContract;
@@ -181,6 +182,12 @@ public class MessageCallProcessor extends AbstractMessageProcessor {
       final PrecompiledContract contract,
       final MessageFrame frame,
       final OperationTracer operationTracer) {
+    final var b = frame.getContractAddress().getBytes();
+    if (b.get(18) == 0 && b.get(19) < 0x0b) {
+      frame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_BASE + b.get(19)]++;
+    } else {
+      frame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_OTHERS]++;
+    }
     final long gasRequirement = contract.gasRequirement(frame.getInputData());
     final Bytes output;
     if (frame.getRemainingGas() < gasRequirement) {

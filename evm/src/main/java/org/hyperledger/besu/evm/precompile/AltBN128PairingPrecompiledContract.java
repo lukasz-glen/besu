@@ -21,6 +21,7 @@ import org.hyperledger.besu.crypto.altbn128.Fq;
 import org.hyperledger.besu.crypto.altbn128.Fq12;
 import org.hyperledger.besu.crypto.altbn128.Fq2;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.nativelib.gnark.LibGnarkEIP196;
@@ -98,6 +99,7 @@ public class AltBN128PairingPrecompiledContract extends AbstractAltBnPrecompiled
   @Override
   public PrecompileContractResult computePrecompile(
       final Bytes input, @NotNull final MessageFrame messageFrame) {
+    messageFrame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_EC_PAIRING_PARAMS_PROCESSED] += input.size() / PARAMETER_LENGTH;
     if (input.isEmpty()) {
       return PrecompileContractResult.success(TRUE);
     }

@@ -28,6 +28,7 @@ import org.hyperledger.besu.ethereum.chain.GenesisState;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
 import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
+import org.hyperledger.besu.ethereum.core.Transaction;
 import org.hyperledger.besu.ethereum.core.MiningConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.BalConfiguration;
 import org.hyperledger.besu.ethereum.mainnet.MainnetBlockHeaderFunctions;
@@ -44,15 +45,20 @@ import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueSegmentIdentifier;
 import org.hyperledger.besu.ethereum.storage.keyvalue.WorldStatePreimageKeyValueStorage;
 import org.hyperledger.besu.ethereum.worldstate.DataStorageConfiguration;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateStorageCoordinator;
+import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
+import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.plugin.ServiceManager;
+import org.hyperledger.besu.plugin.services.BlockImportTracerProvider;
 import org.hyperledger.besu.plugin.services.BesuConfiguration;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.storage.KeyValueStorage;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.RocksDBMetricsFactory;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.RocksDBKeyValueStorageFactory;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions;
+import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
 import org.hyperledger.besu.services.BesuConfigurationImpl;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Hash;
@@ -66,6 +72,8 @@ import java.nio.file.Path;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.HashMap;
 import java.util.List;
@@ -244,12 +252,16 @@ public final class ReplayTransactionsFromDb {
       }
 
       final ConsensusContext consensusContext = new SimpleConsensusContext();
+
+      final var opcodeCollectorProvider = new OpcodeCollectorBlockImportTracerProvider();
+      final var serviceManager = new ServiceManager.SimpleServiceManager();
+      serviceManager.addService(BlockImportTracerProvider.class, opcodeCollectorProvider);
       final ProtocolContext protocolContext =
           new ProtocolContext.Builder()
               .withBlockchain(blockchain)
               .withWorldStateArchive(worldStateArchive)
               .withConsensusContext(consensusContext)
-              .withServiceManager(new ServiceManager.SimpleServiceManager())
+              .withServiceManager(serviceManager)
               .build();
 
       // 4. Sequentially process blocks through the protocol's block processor.
@@ -289,6 +301,24 @@ public final class ReplayTransactionsFromDb {
           }
           break;
         }
+
+        // Expose per-transaction opcode usage back to this replay tool.
+        opcodeCollectorProvider
+            .getLastTracer()
+            .ifPresent(
+                tracer -> {
+                  final List<TransactionReplayOpcodes> txOpcodes = tracer.getTransactionResults();
+                  final List<Transaction> blockTxs = block.getBody().getTransactions();
+                  if (txOpcodes.size() != blockTxs.size()) {
+                    System.err.println(
+                        "Opcode tracer mismatch at blockNumber="
+                            + currentBlockNumber
+                            + " txsInBlock="
+                            + blockTxs.size()
+                            + " tracedTxs="
+                            + txOpcodes.size());
+                  }
+                });
 
         // Persist progress only after successful persistence of this block.
         writeProgress(
@@ -411,5 +441,91 @@ public final class ReplayTransactionsFromDb {
       return klass.cast(this);
     }
   }
+
+  /**
+   * Provides a {@link BlockAwareOperationTracer} for block processing that collects, per
+   * transaction, the per-frame opcode histograms stored in {@link TxValues#perFrameOpcodeUsage()}.
+   *
+   * <p>Implemented via the plugin service mechanism because {@link
+   * org.hyperledger.besu.ethereum.mainnet.BlockProcessor} does not expose an operation tracer
+   * parameter.
+   */
+  private static final class OpcodeCollectorBlockImportTracerProvider
+      implements BlockImportTracerProvider {
+    private volatile BlockOpcodeCollectorTracer lastTracer;
+
+    @Override
+    public BlockAwareOperationTracer getBlockImportTracer(
+        final org.hyperledger.besu.plugin.data.BlockHeader blockHeader) {
+      lastTracer = new BlockOpcodeCollectorTracer();
+      return lastTracer;
+    }
+
+    public Optional<BlockOpcodeCollectorTracer> getLastTracer() {
+      return Optional.ofNullable(lastTracer);
+    }
+  }
+
+  /**
+   * Collects opcode usage per transaction, where each transaction contains the per-call arrays
+   * allocated for each {@link MessageFrame} created during execution.
+   */
+  private static final class BlockOpcodeCollectorTracer implements BlockAwareOperationTracer {
+    private Hash currentTxHash;
+    private int txIndexInBlock;
+    private final Map<Hash, TxValues> txValuesByTxHash = new HashMap<>();
+    private final List<TransactionReplayOpcodes> transactionResults = new ArrayList<>();
+
+    @Override
+    public void traceStartTransaction(
+        final org.hyperledger.besu.evm.worldstate.WorldView worldView,
+        final org.hyperledger.besu.datatypes.Transaction transaction) {
+      currentTxHash = transaction.getHash();
+    }
+
+    @Override
+    public void traceContextEnter(final MessageFrame frame) {
+      // The root frame is the only one with stack size 1 at the point it's first processed.
+      if (frame.getMessageFrameStack().size() == 1 && currentTxHash != null) {
+        txValuesByTxHash.put(currentTxHash, frame.getTxValues());
+      }
+    }
+
+    @Override
+    public void traceEndTransaction(
+        final org.hyperledger.besu.evm.worldstate.WorldView worldView,
+        final org.hyperledger.besu.datatypes.Transaction tx,
+        final boolean status,
+        final org.apache.tuweni.bytes.Bytes output,
+        final List<org.hyperledger.besu.datatypes.Log> logs,
+        final long gasUsed,
+        final java.util.Set<org.hyperledger.besu.datatypes.Address> selfDestructs,
+        final long timeNs) {
+      final Hash txHash = tx.getHash();
+      final TxValues txValues = txValuesByTxHash.get(txHash);
+
+      final List<int[]> perCallOpcodeExecutionCounts =
+          txValues == null ? List.of() : List.copyOf(txValues.perCallOpcodeUsage());
+
+      transactionResults.add(
+          new TransactionReplayOpcodes(
+              txHash, txIndexInBlock++, status, gasUsed, perCallOpcodeExecutionCounts));
+    }
+
+    public List<TransactionReplayOpcodes> getTransactionResults() {
+      return Collections.unmodifiableList(transactionResults);
+    }
+  }
+
+  /**
+   * Per-transaction output available to {@link ReplayTransactionsFromDb} after a block is
+   * processed.
+   */
+  private record TransactionReplayOpcodes(
+      Hash transactionHash,
+      int transactionIndexInBlock,
+      boolean succeeded,
+      long gasUsed,
+      List<int[]> perCallOpcodeExecutionCounts) {}
 }
 

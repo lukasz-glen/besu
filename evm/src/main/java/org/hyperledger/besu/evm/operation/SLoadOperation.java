@@ -19,6 +19,7 @@ import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.account.Account;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.OverflowException;
 import org.hyperledger.besu.evm.internal.UnderflowException;
@@ -57,6 +58,7 @@ public class SLoadOperation extends AbstractOperation {
       final Address address = account.getAddress();
       final Bytes32 key = UInt256.fromBytes(frame.popStackItem());
       final boolean slotIsWarm = frame.warmUpStorage(address, key);
+      frame.getOpcodeExecutionCounts()[slotIsWarm ? TxValues.ACCESS_STORAGE_WARM_COUNT : TxValues.ACCESS_STORAGE_COLD_COUNT]++;
       final long cost = slotIsWarm ? warmCost : coldCost;
       if (frame.getRemainingGas() < cost) {
         return new OperationResult(cost, ExceptionalHaltReason.INSUFFICIENT_GAS);

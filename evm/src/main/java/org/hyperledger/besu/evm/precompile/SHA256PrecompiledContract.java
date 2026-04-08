@@ -16,7 +16,9 @@ package org.hyperledger.besu.evm.precompile;
 
 import org.hyperledger.besu.crypto.Hash;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
+import static org.hyperledger.besu.evm.internal.Words.numWords;
 
 import jakarta.validation.constraints.NotNull;
 import org.apache.tuweni.bytes.Bytes;
@@ -42,6 +44,7 @@ public class SHA256PrecompiledContract extends AbstractPrecompiledContract {
   @Override
   public PrecompileContractResult computePrecompile(
       final Bytes input, @NotNull final MessageFrame messageFrame) {
+    messageFrame.getOpcodeExecutionCounts()[TxValues.CALL_PRECOMPILE_SHA256_WORDS_PROCESSED] += numWords(input);
     return PrecompileContractResult.success(Hash.sha256(input));
   }
 }

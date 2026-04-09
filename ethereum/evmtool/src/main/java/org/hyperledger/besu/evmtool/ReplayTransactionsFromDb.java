@@ -68,10 +68,12 @@ import org.hyperledger.besu.ethereum.core.MutableWorldState;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.BufferedWriter;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Properties;
@@ -96,6 +98,9 @@ public final class ReplayTransactionsFromDb {
     final Map<String, String> cli = parseArgs(args);
     final Path dataPath =
         Path.of(requireNonNull(cli.get("--data-path"), "--data-path is required")).toAbsolutePath();
+    final Path blockCsvDir =
+        Path.of(requireNonNull(cli.get("--block-csv-dir"), "--block-csv-dir is required"))
+            .toAbsolutePath();
 
     final long toBlockOption = parseLongOrDefault(cli.get("--to-block"), -1L);
     final long toBlock;
@@ -318,6 +323,8 @@ public final class ReplayTransactionsFromDb {
                             + " tracedTxs="
                             + txOpcodes.size());
                   }
+
+                  writeBlockCsv(blockCsvDir, block, txOpcodes);
                 });
 
         // Persist progress only after successful persistence of this block.
@@ -353,6 +360,57 @@ public final class ReplayTransactionsFromDb {
       } catch (final Exception e) {
         System.err.println("Failed to close replayPreimageKv: " + e.getMessage());
       }
+    }
+  }
+
+  private static void writeBlockCsv(
+      final Path blockCsvDir, final Block block, final List<TransactionReplayOpcodes> txResults) {
+    final long blockNumber = block.getHeader().getNumber();
+    final String blockHashHex = block.getHeader().getHash().toHexString();
+    final Path out = blockCsvDir.resolve(String.format("block.%d.%s", blockNumber, blockHashHex));
+    final Path txsOut =
+        blockCsvDir.resolve(String.format("txs.%d.%s.csv", blockNumber, blockHashHex));
+
+    final StringBuilder sb = new StringBuilder(128 + txResults.size() * 64);
+    sb.append("transactionIndexInBlock,transactionHash,succeeded,gasUsed\n");
+    for (final TransactionReplayOpcodes tx : txResults) {
+      sb.append(tx.transactionIndexInBlock())
+          .append(',')
+          .append(tx.transactionHash().toHexString())
+          .append(',')
+          .append(tx.succeeded())
+          .append(',')
+          .append(tx.gasUsed())
+          .append('\n');
+    }
+
+    try {
+      Files.createDirectories(out.getParent());
+      Files.writeString(out, sb.toString(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+
+      // Storage-efficient per-call usage vectors: write empty fields for zeros.
+      try (BufferedWriter w =
+          Files.newBufferedWriter(
+              txsOut, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+        for (final TransactionReplayOpcodes tx : txResults) {
+          final int txIndex = tx.transactionIndexInBlock();
+          for (final int[] callOpcodeExecutionCounts : tx.perCallOpcodeExecutionCounts()) {
+            w.write(Integer.toString(txIndex));
+            final int len = callOpcodeExecutionCounts.length;
+            for (int i = 0; i < len; i++) {
+              w.write(',');
+              final int v = callOpcodeExecutionCounts[i];
+              if (v != 0) {
+                w.write(Integer.toString(v));
+              }
+            }
+            w.newLine();
+          }
+        }
+      }
+    } catch (final IOException e) {
+      throw new RuntimeException(
+          "Failed to write block csv outputs to: " + out + " and " + txsOut, e);
     }
   }
 

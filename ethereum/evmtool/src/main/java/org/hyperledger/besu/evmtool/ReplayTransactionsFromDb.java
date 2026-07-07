@@ -134,16 +134,21 @@ public final class ReplayTransactionsFromDb {
         new BesuConfigurationImpl().init(
             dataPath, storagePath, DataStorageConfiguration.DEFAULT_BONSAI_CONFIG);
 
-    final RocksDBKeyValueStorageFactory rocksDbFactory =
+    final RocksDBKeyValueStorageFactory sourceRocksDbFactory =
         new RocksDBKeyValueStorageFactory(
             RocksDBCLIOptions.create()::toDomainObject,
             List.of(KeyValueSegmentIdentifier.values()),
             RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS);
 
-    // Replay DB: separate RocksDB that we can write to (without touching the node DB).
-    final BesuConfiguration replayBesuConfiguration =
-        new BesuConfigurationImpl()
-            .init(replayDataPath, replayStoragePath, DataStorageConfiguration.DEFAULT_FOREST_CONFIG);
+    // Separate factory for the replay world-state DB. A single RocksDBKeyValueStorageFactory
+    // instance can only open one column-family layout; initializing it on the BONSAI source DB
+    // would omit the FOREST-only WORLD_STATE column used by ForestWorldStateKeyValueStorage.
+    final boolean replayDbExists = Files.exists(replayStoragePath);
+    final RocksDBKeyValueStorageFactory replayRocksDbFactory =
+        new RocksDBKeyValueStorageFactory(
+            RocksDBCLIOptions.create()::toDomainObject,
+            List.of(KeyValueSegmentIdentifier.values()),
+            RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS);
 
     final KeyValueStorage blockchainKv;
     final KeyValueStorage variablesKv;
@@ -151,13 +156,19 @@ public final class ReplayTransactionsFromDb {
     KeyValueStorage replayPreimageKv = null;
     try {
       blockchainKv =
-          rocksDbFactory.create(
+          sourceRocksDbFactory.create(
               KeyValueSegmentIdentifier.BLOCKCHAIN, besuConfiguration, metricsSystem);
       variablesKv =
-          rocksDbFactory.create(KeyValueSegmentIdentifier.VARIABLES, besuConfiguration, metricsSystem);
+          sourceRocksDbFactory.create(
+              KeyValueSegmentIdentifier.VARIABLES, besuConfiguration, metricsSystem);
     } catch (final Exception e) {
       throw new RuntimeException("Failed to open RocksDB storages under: " + storagePath, e);
     }
+
+    // Replay DB: separate RocksDB that we can write to (without touching the node DB).
+    final BesuConfiguration replayBesuConfiguration =
+        new BesuConfigurationImpl()
+            .init(replayDataPath, replayStoragePath, DataStorageConfiguration.DEFAULT_FOREST_CONFIG);
 
     try {
       final var variablesStorage = new VariablesKeyValueStorage(variablesKv);
@@ -180,10 +191,10 @@ public final class ReplayTransactionsFromDb {
 
       // 3. Open a disk-backed world state (replay DB) and ProtocolContext for block processing.
       replayWorldStateKv =
-          rocksDbFactory.create(
+          replayRocksDbFactory.create(
               KeyValueSegmentIdentifier.WORLD_STATE, replayBesuConfiguration, metricsSystem);
       replayPreimageKv =
-          rocksDbFactory.create(
+          replayRocksDbFactory.create(
               KeyValueSegmentIdentifier.PRUNING_STATE, replayBesuConfiguration, metricsSystem);
 
       final ForestWorldStateKeyValueStorage replayForestWsStorage =
@@ -197,7 +208,6 @@ public final class ReplayTransactionsFromDb {
           new ForestWorldStateArchive(
               worldStateStorageCoordinator, preimageStorage, EvmConfiguration.DEFAULT);
 
-      final boolean replayDbExists = Files.exists(replayStoragePath);
       final boolean progressExists = Files.exists(progressFile);
 
       final Optional<ReplayProgress> maybeProgress;
@@ -359,6 +369,16 @@ public final class ReplayTransactionsFromDb {
         }
       } catch (final Exception e) {
         System.err.println("Failed to close replayPreimageKv: " + e.getMessage());
+      }
+      try {
+        replayRocksDbFactory.close();
+      } catch (final Exception e) {
+        System.err.println("Failed to close replayRocksDbFactory: " + e.getMessage());
+      }
+      try {
+        sourceRocksDbFactory.close();
+      } catch (final Exception e) {
+        System.err.println("Failed to close sourceRocksDbFactory: " + e.getMessage());
       }
     }
   }

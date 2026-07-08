@@ -26,6 +26,7 @@ import org.hyperledger.besu.ethereum.chain.BlockchainStorage;
 import org.hyperledger.besu.ethereum.chain.DefaultBlockchain;
 import org.hyperledger.besu.ethereum.chain.GenesisState;
 import org.hyperledger.besu.ethereum.chain.MutableBlockchain;
+import org.hyperledger.besu.ethereum.chain.VariablesStorage;
 import org.hyperledger.besu.ethereum.core.Block;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
 import org.hyperledger.besu.ethereum.core.Transaction;
@@ -35,29 +36,44 @@ import org.hyperledger.besu.ethereum.mainnet.MainnetBlockHeaderFunctions;
 import org.hyperledger.besu.ethereum.mainnet.MainnetProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSchedule;
 import org.hyperledger.besu.ethereum.mainnet.ProtocolSpec;
+import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueStorageProvider;
 import org.hyperledger.besu.ethereum.trie.forest.ForestWorldStateArchive;
 import org.hyperledger.besu.ethereum.trie.forest.storage.ForestWorldStateKeyValueStorage;
 import org.hyperledger.besu.ethereum.trie.forest.worldview.ForestMutableWorldState;
+import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.BonsaiArchiveWorldStateProvider;
+import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.BonsaiWorldStateProvider;
+import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.cache.BonsaiCachedMerkleTrieLoader;
 import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.cache.CodeCache;
+import org.hyperledger.besu.ethereum.trie.pathbased.bonsai.storage.BonsaiWorldStateKeyValueStorage;
+import org.hyperledger.besu.ethereum.trie.pathbased.common.provider.WorldStateQueryParams;
+import org.hyperledger.besu.ethereum.trie.pathbased.common.worldview.PathBasedWorldState;
 import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueStoragePrefixedKeyBlockchainStorage;
 import org.hyperledger.besu.ethereum.storage.keyvalue.VariablesKeyValueStorage;
 import org.hyperledger.besu.ethereum.storage.keyvalue.KeyValueSegmentIdentifier;
 import org.hyperledger.besu.ethereum.storage.keyvalue.WorldStatePreimageKeyValueStorage;
 import org.hyperledger.besu.ethereum.worldstate.DataStorageConfiguration;
+import org.hyperledger.besu.ethereum.worldstate.WorldStateArchive;
 import org.hyperledger.besu.ethereum.worldstate.WorldStateStorageCoordinator;
+import org.hyperledger.besu.services.kvstore.InMemoryKeyValueStorage;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.internal.EvmConfiguration;
+import org.hyperledger.besu.evm.precompile.KZGPointEvalPrecompiledContract;
 import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.BlockImportTracerProvider;
 import org.hyperledger.besu.plugin.services.BesuConfiguration;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
+import org.hyperledger.besu.plugin.services.storage.DataStorageFormat;
 import org.hyperledger.besu.plugin.services.storage.KeyValueStorage;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.RocksDBMetricsFactory;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.RocksDBKeyValueStorageFactory;
+import org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.BaseVersionedStorageFormat;
+import org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.DatabaseMetadata;
 import org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.RocksDBCLIOptions;
+import org.hyperledger.besu.plugin.services.storage.rocksdb.configuration.VersionedStorageFormat;
+import org.hyperledger.besu.ethereum.worldstate.ImmutableDataStorageConfiguration;
 import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
 import org.hyperledger.besu.services.BesuConfigurationImpl;
 import org.apache.tuweni.bytes.Bytes32;
@@ -83,39 +99,60 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Standalone tool that re-executes blocks sequentially from genesis using the on-disk Besu
- * database as a transaction/block source, while keeping the executed world state in a
- * separate replay database on disk.
+ * Re-executes blocks from a source Besu database into an existing replay Besu database.
  *
- * <p>This is intended for experimentation; validating all Mainnet blocks can take a very long
- * time.
+ * <p>{@code --data-path} supplies canonical block bodies (read-only). {@code --replay-data-path}
+ * must point at an existing Besu data directory whose world state is the starting snapshot; replay
+ * begins at that directory's chain head and advances the replay world state as blocks are
+ * processed. BONSAI and FOREST replay databases are supported (format is read from database
+ * metadata).
  */
 public final class ReplayTransactionsFromDb {
 
   private ReplayTransactionsFromDb() {}
 
-  public static void main(final String[] args) {
+  public static void main(final String[] args) throws IOException {
     final Map<String, String> cli = parseArgs(args);
+
+    // Mainnet blob/KZG precompile and block-body validation require the CKZG4844 native library.
+    final Path kzgTrustedSetupFile =
+        Optional.ofNullable(cli.get("--kzg-trusted-setup")).map(Path::of).orElse(null);
+    if (kzgTrustedSetupFile != null) {
+      KZGPointEvalPrecompiledContract.init(kzgTrustedSetupFile);
+    } else {
+      KZGPointEvalPrecompiledContract.init();
+    }
+
     final Path dataPath =
         Path.of(requireNonNull(cli.get("--data-path"), "--data-path is required")).toAbsolutePath();
     final Path blockCsvDir =
         Path.of(requireNonNull(cli.get("--block-csv-dir"), "--block-csv-dir is required"))
             .toAbsolutePath();
+    final Path replayDataPath =
+        Path.of(requireNonNull(cli.get("--replay-data-path"), "--replay-data-path is required"))
+            .toAbsolutePath();
 
     final long toBlockOption = parseLongOrDefault(cli.get("--to-block"), -1L);
     final long toBlock;
 
-    final Path storagePath = dataPath.resolve(BesuController.DATABASE_PATH);
-    final Path replayDataPath =
-        Path.of(cli.getOrDefault("--replay-data-path", dataPath.resolve("replay-worldstate").toString()))
-            .toAbsolutePath();
+    final Path sourceStoragePath = dataPath.resolve(BesuController.DATABASE_PATH);
     final Path replayStoragePath = replayDataPath.resolve(BesuController.DATABASE_PATH);
     final Path progressFile = replayDataPath.resolve("replay-progress.properties");
     final boolean resume = Boolean.parseBoolean(cli.getOrDefault("--resume", "true"));
 
-    // 1. Build the protocol schedule + genesis world state (for initializing our in-memory state).
+    if (!Files.exists(replayStoragePath)) {
+      throw new IllegalStateException(
+          "Replay data path must contain an existing Besu database at " + replayStoragePath);
+    }
+
+    final DataStorageConfiguration sourceStorageConfiguration =
+        dataStorageConfigurationFrom(DatabaseMetadata.lookUpFrom(dataPath));
+    final DataStorageConfiguration replayStorageConfiguration =
+        dataStorageConfigurationFrom(DatabaseMetadata.lookUpFrom(replayDataPath));
+
+    // 1. Build the protocol schedule (mainnet genesis is used only to anchor the blockchain view).
     final GenesisConfig genesisConfig = GenesisConfig.mainnet();
-    final MetricsSystem metricsSystem = new NoOpMetricsSystem();
+    final NoOpMetricsSystem metricsSystem = new NoOpMetricsSystem();
     final ProtocolSchedule protocolSchedule =
         MainnetProtocolSchedule.fromConfig(
             genesisConfig.getConfigOptions(),
@@ -127,12 +164,12 @@ public final class ReplayTransactionsFromDb {
             BalConfiguration.DEFAULT,
             metricsSystem);
 
-    final GenesisState genesisState = GenesisState.fromConfig(genesisConfig, protocolSchedule, new CodeCache());
+    final CodeCache codeCache = new CodeCache();
+    final GenesisState genesisState = GenesisState.fromConfig(genesisConfig, protocolSchedule, codeCache);
 
-    // 2. Open the existing DB to read canonical blocks.
-    final BesuConfiguration besuConfiguration =
-        new BesuConfigurationImpl().init(
-            dataPath, storagePath, DataStorageConfiguration.DEFAULT_BONSAI_CONFIG);
+    // 2. Open the source DB to read canonical blocks (read-only usage).
+    final BesuConfiguration sourceBesuConfiguration =
+        new BesuConfigurationImpl().init(dataPath, sourceStoragePath, sourceStorageConfiguration);
 
     final RocksDBKeyValueStorageFactory sourceRocksDbFactory =
         new RocksDBKeyValueStorageFactory(
@@ -140,130 +177,218 @@ public final class ReplayTransactionsFromDb {
             List.of(KeyValueSegmentIdentifier.values()),
             RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS);
 
-    // Separate factory for the replay world-state DB. A single RocksDBKeyValueStorageFactory
-    // instance can only open one column-family layout; initializing it on the BONSAI source DB
-    // would omit the FOREST-only WORLD_STATE column used by ForestWorldStateKeyValueStorage.
-    final boolean replayDbExists = Files.exists(replayStoragePath);
+    // Separate factory for the replay DB. A single RocksDBKeyValueStorageFactory instance can only
+    // open one column-family layout, so source and replay must use different factories.
     final RocksDBKeyValueStorageFactory replayRocksDbFactory =
         new RocksDBKeyValueStorageFactory(
             RocksDBCLIOptions.create()::toDomainObject,
             List.of(KeyValueSegmentIdentifier.values()),
             RocksDBMetricsFactory.PUBLIC_ROCKS_DB_METRICS);
 
-    final KeyValueStorage blockchainKv;
-    final KeyValueStorage variablesKv;
+    final KeyValueStorage sourceBlockchainKv;
+    final KeyValueStorage sourceVariablesKv;
     KeyValueStorage replayWorldStateKv = null;
     KeyValueStorage replayPreimageKv = null;
+    KeyValueStorageProvider replayStorageProvider = null;
     try {
-      blockchainKv =
+      sourceBlockchainKv =
           sourceRocksDbFactory.create(
-              KeyValueSegmentIdentifier.BLOCKCHAIN, besuConfiguration, metricsSystem);
-      variablesKv =
+              KeyValueSegmentIdentifier.BLOCKCHAIN, sourceBesuConfiguration, metricsSystem);
+      sourceVariablesKv =
           sourceRocksDbFactory.create(
-              KeyValueSegmentIdentifier.VARIABLES, besuConfiguration, metricsSystem);
+              KeyValueSegmentIdentifier.VARIABLES, sourceBesuConfiguration, metricsSystem);
     } catch (final Exception e) {
-      throw new RuntimeException("Failed to open RocksDB storages under: " + storagePath, e);
+      throw new RuntimeException("Failed to open source RocksDB storages under: " + sourceStoragePath, e);
     }
 
-    // Replay DB: separate RocksDB that we can write to (without touching the node DB).
     final BesuConfiguration replayBesuConfiguration =
-        new BesuConfigurationImpl()
-            .init(replayDataPath, replayStoragePath, DataStorageConfiguration.DEFAULT_FOREST_CONFIG);
+        new BesuConfigurationImpl().init(replayDataPath, replayStoragePath, replayStorageConfiguration);
 
     try {
-      final var variablesStorage = new VariablesKeyValueStorage(variablesKv);
-      final BlockchainStorage blockchainStorage =
+      final var sourceVariablesStorage = new VariablesKeyValueStorage(sourceVariablesKv);
+      final BlockchainStorage sourceBlockchainStorage =
           new KeyValueStoragePrefixedKeyBlockchainStorage(
-              blockchainKv,
-              variablesStorage,
+              sourceBlockchainKv,
+              sourceVariablesStorage,
               new MainnetBlockHeaderFunctions(),
-              /* receiptCompaction= */ true);
+              sourceStorageConfiguration.getReceiptCompactionEnabled());
 
-      final MutableBlockchain blockchain =
+      final MutableBlockchain sourceBlockchain =
           DefaultBlockchain.createMutable(
               genesisState.getBlock(),
-              blockchainStorage,
+              sourceBlockchainStorage,
               new NoOpMetricsSystem(),
               /* reorgLoggingThreshold= */ 0);
 
-      final long chainHeadBlockNumber = blockchain.getChainHeadBlockNumber();
-      toBlock = toBlockOption < 0 ? chainHeadBlockNumber : toBlockOption;
+      final long sourceChainHeadBlockNumber = sourceBlockchain.getChainHeadBlockNumber();
+      toBlock = toBlockOption < 0 ? sourceChainHeadBlockNumber : toBlockOption;
 
-      // 3. Open a disk-backed world state (replay DB) and ProtocolContext for block processing.
-      replayWorldStateKv =
-          replayRocksDbFactory.create(
-              KeyValueSegmentIdentifier.WORLD_STATE, replayBesuConfiguration, metricsSystem);
-      replayPreimageKv =
-          replayRocksDbFactory.create(
-              KeyValueSegmentIdentifier.PRUNING_STATE, replayBesuConfiguration, metricsSystem);
-
-      final ForestWorldStateKeyValueStorage replayForestWsStorage =
-          new ForestWorldStateKeyValueStorage(replayWorldStateKv);
-      final WorldStateStorageCoordinator worldStateStorageCoordinator =
-          new WorldStateStorageCoordinator(replayForestWsStorage);
-      final WorldStatePreimageStorage preimageStorage =
-          new WorldStatePreimageKeyValueStorage(replayPreimageKv);
-
-      final ForestWorldStateArchive worldStateArchive =
-          new ForestWorldStateArchive(
-              worldStateStorageCoordinator, preimageStorage, EvmConfiguration.DEFAULT);
-
-      final boolean progressExists = Files.exists(progressFile);
-
-      final Optional<ReplayProgress> maybeProgress;
-      if (!resume) {
-        maybeProgress = Optional.empty();
-      } else if (replayDbExists && progressExists) {
-        maybeProgress = readProgress(progressFile);
-      } else if (replayDbExists && !progressExists) {
-        throw new IllegalStateException(
-            "Replay database exists but progress file is missing. "
-                + "Refusing to run because the replay state root to resume from is unknown. "
-                + "Either restore "
-                + progressFile
-                + " or delete the replay database at "
-                + replayDataPath);
-      } else if (!replayDbExists && progressExists) {
-        System.err.println(
-            "Replay progress file exists but replay database directory is missing. "
-                + "Ignoring progress and starting from genesis.");
-        maybeProgress = Optional.empty();
+      final MutableBlockchain replayBlockchain;
+      final BlockHeader replayHeadHeader;
+      if (replayStorageConfiguration.getDataStorageFormat().isBonsaiFormat()) {
+        replayStorageProvider =
+            new KeyValueStorageProvider(
+                segments ->
+                    replayRocksDbFactory.create(segments, replayBesuConfiguration, metricsSystem),
+                new InMemoryKeyValueStorage(),
+                metricsSystem);
+        replayBlockchain =
+            openReplayBlockchain(
+                replayStorageProvider,
+                replayStorageConfiguration,
+                protocolSchedule,
+                genesisState,
+                metricsSystem);
+        replayHeadHeader = replayBlockchain.getChainHeadHeader();
       } else {
-        maybeProgress = Optional.empty();
+        replayBlockchain = null;
+        replayHeadHeader =
+            readReplayChainHeadHeader(
+                replayBesuConfiguration, replayRocksDbFactory, genesisState, metricsSystem);
+      }
+      final long replayHeadBlockNumber = replayHeadHeader.getNumber();
+      final Hash replayHeadStateRoot = replayHeadHeader.getStateRoot();
+
+      if (replayHeadBlockNumber > sourceChainHeadBlockNumber) {
+        throw new IllegalStateException(
+            "Replay chain head ("
+                + replayHeadBlockNumber
+                + ") is ahead of source chain head ("
+                + sourceChainHeadBlockNumber
+                + ")");
       }
 
-      long currentFromBlock = 1L;
-      final MutableWorldState mutableWorldState;
+      final Optional<ReplayProgress> maybeProgress = resume ? readProgress(progressFile) : Optional.empty();
 
+      final long checkpointBlockNumber;
+      final long currentFromBlock;
       if (maybeProgress.isPresent()) {
         final ReplayProgress progress = maybeProgress.get();
+        checkpointBlockNumber = progress.lastProcessedBlockNumber;
         currentFromBlock = progress.lastProcessedBlockNumber + 1;
+      } else {
+        checkpointBlockNumber = replayHeadBlockNumber;
+        currentFromBlock = replayHeadBlockNumber + 1;
+      }
 
-        final Hash stateRoot = Hash.fromHexString(progress.lastProcessedStateRootHex);
+      if (currentFromBlock > toBlock) {
+        throw new IllegalStateException(
+            "Nothing to replay: next block "
+                + currentFromBlock
+                + " is after target to-block "
+                + toBlock);
+      }
+
+      final BlockHeader checkpointHeader =
+          sourceBlockchain
+              .getBlockByNumber(checkpointBlockNumber)
+              .orElseThrow(
+                  () ->
+                      new IllegalStateException(
+                          "Missing source block for replay checkpoint " + checkpointBlockNumber))
+              .getHeader();
+      final Hash initialStateRoot = checkpointHeader.getStateRoot();
+      final Hash initialStateBlockHash = checkpointHeader.getHash();
+
+      if (maybeProgress.isPresent()) {
+        final Hash progressStateRoot =
+            Hash.fromHexString(maybeProgress.get().lastProcessedStateRootHex);
+        if (!progressStateRoot.equals(initialStateRoot)) {
+          throw new IllegalStateException(
+              "Replay progress state root "
+                  + progressStateRoot
+                  + " does not match source checkpoint state root "
+                  + initialStateRoot
+                  + " at block "
+                  + checkpointBlockNumber);
+        }
+      }
+
+      final WorldStateArchive worldStateArchive;
+      final MutableWorldState mutableWorldState;
+      if (replayStorageConfiguration.getDataStorageFormat().isBonsaiFormat()) {
+        final WorldStateStorageCoordinator replayWorldStateCoordinator =
+            replayStorageProvider.createWorldStateStorageCoordinator(replayStorageConfiguration);
+        final BonsaiWorldStateKeyValueStorage bonsaiWorldStateStorage =
+            replayWorldStateCoordinator.getStrategy(BonsaiWorldStateKeyValueStorage.class);
+        final BonsaiCachedMerkleTrieLoader bonsaiCachedMerkleTrieLoader =
+            new BonsaiCachedMerkleTrieLoader(metricsSystem);
+
+        worldStateArchive =
+            replayStorageConfiguration.getDataStorageFormat() == DataStorageFormat.X_BONSAI_ARCHIVE
+                ? new BonsaiArchiveWorldStateProvider(
+                    bonsaiWorldStateStorage,
+                    replayBlockchain,
+                    replayStorageConfiguration.getPathBasedExtraStorageConfiguration(),
+                    bonsaiCachedMerkleTrieLoader,
+                    null,
+                    EvmConfiguration.DEFAULT,
+                    () -> (maybeAccount, location) -> {},
+                    codeCache)
+                : new BonsaiWorldStateProvider(
+                    bonsaiWorldStateStorage,
+                    replayBlockchain,
+                    replayStorageConfiguration.getPathBasedExtraStorageConfiguration(),
+                    bonsaiCachedMerkleTrieLoader,
+                    null,
+                    EvmConfiguration.DEFAULT,
+                    () -> (maybeAccount, location) -> {},
+                    codeCache);
+
+        if (!worldStateArchive.isWorldStateAvailable(initialStateRoot, initialStateBlockHash)) {
+          throw new IllegalStateException(
+              "Replay world state is not available for state root "
+                  + initialStateRoot
+                  + " at block hash "
+                  + initialStateBlockHash);
+        }
+
+        mutableWorldState =
+            loadBonsaiCheckpointWorldState(
+                worldStateArchive,
+                checkpointHeader,
+                initialStateRoot,
+                initialStateBlockHash,
+                checkpointBlockNumber,
+                replayHeadBlockNumber);
+      } else if (replayStorageConfiguration.getDataStorageFormat() == DataStorageFormat.FOREST) {
+        replayWorldStateKv =
+            replayRocksDbFactory.create(
+                KeyValueSegmentIdentifier.WORLD_STATE, replayBesuConfiguration, metricsSystem);
+        replayPreimageKv =
+            replayRocksDbFactory.create(
+                KeyValueSegmentIdentifier.PRUNING_STATE, replayBesuConfiguration, metricsSystem);
+
+        final ForestWorldStateKeyValueStorage replayForestWsStorage =
+            new ForestWorldStateKeyValueStorage(replayWorldStateKv);
+        final WorldStateStorageCoordinator worldStateStorageCoordinator =
+            new WorldStateStorageCoordinator(replayForestWsStorage);
+        final WorldStatePreimageStorage preimageStorage =
+            new WorldStatePreimageKeyValueStorage(replayPreimageKv);
+
+        worldStateArchive =
+            new ForestWorldStateArchive(
+                worldStateStorageCoordinator, preimageStorage, EvmConfiguration.DEFAULT);
+
+        if (!worldStateStorageCoordinator.isWorldStateAvailable(
+            Bytes32.wrap(initialStateRoot.getBytes()), initialStateBlockHash)) {
+          throw new IllegalStateException(
+              "Replay world state is not available for state root "
+                  + initialStateRoot
+                  + " at block hash "
+                  + initialStateBlockHash);
+        }
+
         mutableWorldState =
             new ForestMutableWorldState(
-                Bytes32.wrap(stateRoot.getBytes()),
+                Bytes32.wrap(initialStateRoot.getBytes()),
                 replayForestWsStorage,
                 preimageStorage,
                 EvmConfiguration.DEFAULT);
       } else {
-        mutableWorldState =
-            new ForestMutableWorldState(
-                replayForestWsStorage, preimageStorage, EvmConfiguration.DEFAULT);
-        // Initialize world state to genesis allocations.
-        genesisState.writeStateTo(mutableWorldState);
-      }
-
-      // Sanity-check: genesis header stateRoot in the DB should match our computed root.
-      final Block dbGenesis = blockchain.getGenesisBlock();
-      final BlockHeader dbGenesisHeader = dbGenesis.getHeader();
-      final var computedGenesisRoot = mutableWorldState.rootHash();
-      if (!dbGenesisHeader.getStateRoot().equals(computedGenesisRoot) && maybeProgress.isEmpty()) {
         throw new IllegalStateException(
-            "Genesis stateRoot mismatch (fresh replay): DB="
-                + dbGenesisHeader.getStateRoot()
-                + " computed="
-                + computedGenesisRoot);
+            "Unsupported replay data storage format: "
+                + replayStorageConfiguration.getDataStorageFormat());
       }
 
       final ConsensusContext consensusContext = new SimpleConsensusContext();
@@ -273,7 +398,7 @@ public final class ReplayTransactionsFromDb {
       serviceManager.addService(BlockImportTracerProvider.class, opcodeCollectorProvider);
       final ProtocolContext protocolContext =
           new ProtocolContext.Builder()
-              .withBlockchain(blockchain)
+              .withBlockchain(sourceBlockchain)
               .withWorldStateArchive(worldStateArchive)
               .withConsensusContext(consensusContext)
               .withServiceManager(serviceManager)
@@ -281,29 +406,35 @@ public final class ReplayTransactionsFromDb {
 
       // 4. Sequentially process blocks through the protocol's block processor.
       System.out.println(
-          "Re-executing canonical blocks from "
+          "Re-executing source blocks from "
               + currentFromBlock
               + " to "
               + toBlock
               + " (inclusive). "
-              + (maybeProgress.isPresent() ? "Resuming." : "Fresh start."));
+              + (maybeProgress.isPresent()
+                  ? "Resuming from replay progress."
+                  : "Starting from replay chain head "
+                      + replayHeadBlockNumber
+                      + " (state root "
+                      + replayHeadStateRoot
+                      + ")."));
 
       for (long blockNumber = currentFromBlock; blockNumber <= toBlock; blockNumber++) {
         final long currentBlockNumber = blockNumber;
         final Block block =
-            blockchain
+            sourceBlockchain
                 .getBlockByNumber(currentBlockNumber)
                 .orElseThrow(
                     () ->
                         new IllegalStateException(
-                            "Missing block in DB for blockNumber=" + currentBlockNumber));
+                            "Missing block in source DB for blockNumber=" + currentBlockNumber));
 
         final ProtocolSpec protocolSpec =
             protocolSchedule.getByBlockHeader(block.getHeader());
         final var blockProcessor = protocolSpec.getBlockProcessor();
 
         final BlockProcessingResult result =
-            blockProcessor.processBlock(protocolContext, blockchain, mutableWorldState, block);
+            blockProcessor.processBlock(protocolContext, sourceBlockchain, mutableWorldState, block);
 
         if (!result.isSuccessful()) {
           System.err.println(
@@ -347,29 +478,17 @@ public final class ReplayTransactionsFromDb {
       }
     } finally {
       try {
-        blockchainKv.close();
+        sourceBlockchainKv.close();
       } catch (final Exception e) {
-        System.err.println("Failed to close blockchainKv: " + e.getMessage());
+        System.err.println("Failed to close sourceBlockchainKv: " + e.getMessage());
       }
       try {
-        variablesKv.close();
+        sourceVariablesKv.close();
       } catch (final Exception e) {
-        System.err.println("Failed to close variablesKv: " + e.getMessage());
+        System.err.println("Failed to close sourceVariablesKv: " + e.getMessage());
       }
-      try {
-        if (replayWorldStateKv != null) {
-          replayWorldStateKv.close();
-        }
-      } catch (final Exception e) {
-        System.err.println("Failed to close replayWorldStateKv: " + e.getMessage());
-      }
-      try {
-        if (replayPreimageKv != null) {
-          replayPreimageKv.close();
-        }
-      } catch (final Exception e) {
-        System.err.println("Failed to close replayPreimageKv: " + e.getMessage());
-      }
+      // Do not close individual replay segment storages or the replay storage provider: they share
+      // one RocksDB instance via replayRocksDbFactory, and closing any adapter closes the database.
       try {
         replayRocksDbFactory.close();
       } catch (final Exception e) {
@@ -432,6 +551,125 @@ public final class ReplayTransactionsFromDb {
       throw new RuntimeException(
           "Failed to write block csv outputs to: " + out + " and " + txsOut, e);
     }
+  }
+
+  private static DataStorageConfiguration dataStorageConfigurationFrom(
+      final DatabaseMetadata databaseMetadata) {
+    final VersionedStorageFormat versionedStorageFormat =
+        databaseMetadata.getVersionedStorageFormat();
+    return ImmutableDataStorageConfiguration.builder()
+        .dataStorageFormat(versionedStorageFormat.getFormat())
+        .receiptCompactionEnabled(receiptCompactionEnabled(versionedStorageFormat))
+        .build();
+  }
+
+  private static boolean receiptCompactionEnabled(final VersionedStorageFormat format) {
+    if (format.getFormat() == DataStorageFormat.X_BONSAI_ARCHIVE) {
+      return format.getVersion()
+          >= BaseVersionedStorageFormat.BONSAI_ARCHIVE_WITH_RECEIPT_COMPACTION.getVersion();
+    }
+    return format.getVersion()
+        >= BaseVersionedStorageFormat.FOREST_WITH_RECEIPT_COMPACTION.getVersion();
+  }
+
+  private static MutableWorldState loadBonsaiCheckpointWorldState(
+      final WorldStateArchive worldStateArchive,
+      final BlockHeader checkpointHeader,
+      final Hash expectedStateRoot,
+      final Hash expectedBlockHash,
+      final long checkpointBlockNumber,
+      final long replayHeadBlockNumber) {
+    final MutableWorldState headWorldState = worldStateArchive.getWorldState();
+    if (headWorldState instanceof PathBasedWorldState pathBasedHeadWorldState
+        && pathBasedHeadWorldState.getWorldStateBlockHash().equals(expectedBlockHash)
+        && headWorldState.rootHash().equals(expectedStateRoot)) {
+      return headWorldState;
+    }
+
+    final MutableWorldState rolledWorldState =
+        worldStateArchive
+            .getWorldState(
+                WorldStateQueryParams.withBlockHeaderAndUpdateNodeHead(checkpointHeader))
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Unable to load BONSAI world state at checkpoint block "
+                            + checkpointBlockNumber
+                            + " (replay chain head is "
+                            + replayHeadBlockNumber
+                            + ")"));
+
+    if (!rolledWorldState.rootHash().equals(expectedStateRoot)) {
+      throw new IllegalStateException(
+          "Loaded BONSAI world state root "
+              + rolledWorldState.rootHash()
+              + " does not match checkpoint state root "
+              + expectedStateRoot
+              + " at block "
+              + checkpointBlockNumber);
+    }
+    return rolledWorldState;
+  }
+
+  private static MutableBlockchain openReplayBlockchain(
+      final KeyValueStorageProvider replayStorageProvider,
+      final DataStorageConfiguration replayStorageConfiguration,
+      final ProtocolSchedule protocolSchedule,
+      final GenesisState genesisState,
+      final MetricsSystem metricsSystem) {
+    try {
+      final VariablesStorage variablesStorage = replayStorageProvider.createVariablesStorage();
+      final BlockchainStorage blockchainStorage =
+          replayStorageProvider.createBlockchainStorage(
+              protocolSchedule, variablesStorage, replayStorageConfiguration);
+
+      return DefaultBlockchain.createMutable(
+          genesisState.getBlock(),
+          blockchainStorage,
+          metricsSystem,
+          /* reorgLoggingThreshold= */ 0);
+    } catch (final Exception e) {
+      throw new RuntimeException("Failed to open replay blockchain from replay data path", e);
+    }
+  }
+
+  private static BlockHeader readReplayChainHeadHeader(
+      final BesuConfiguration replayBesuConfiguration,
+      final RocksDBKeyValueStorageFactory replayRocksDbFactory,
+      final GenesisState genesisState,
+      final MetricsSystem metricsSystem) {
+    KeyValueStorage replayBlockchainKv = null;
+    KeyValueStorage replayVariablesKv = null;
+    try {
+      replayBlockchainKv =
+          replayRocksDbFactory.create(
+              KeyValueSegmentIdentifier.BLOCKCHAIN, replayBesuConfiguration, metricsSystem);
+      replayVariablesKv =
+          replayRocksDbFactory.create(
+              KeyValueSegmentIdentifier.VARIABLES, replayBesuConfiguration, metricsSystem);
+
+      final VariablesKeyValueStorage replayVariablesStorage =
+          new VariablesKeyValueStorage(replayVariablesKv);
+      final BlockchainStorage replayBlockchainStorage =
+          new KeyValueStoragePrefixedKeyBlockchainStorage(
+              replayBlockchainKv,
+              replayVariablesStorage,
+              new MainnetBlockHeaderFunctions(),
+              replayBesuConfiguration.getDataStorageConfiguration().getReceiptCompactionEnabled());
+
+      final MutableBlockchain replayBlockchain =
+          DefaultBlockchain.createMutable(
+              genesisState.getBlock(),
+              replayBlockchainStorage,
+              metricsSystem,
+              /* reorgLoggingThreshold= */ 0);
+
+      return replayBlockchain.getChainHeadHeader();
+    } catch (final Exception e) {
+      throw new RuntimeException("Failed to read replay chain head from replay data path", e);
+    }
+    // Do not close replayBlockchainKv/replayVariablesKv: they are adapters over the shared
+    // RocksDB instance owned by replayRocksDbFactory.
   }
 
   private static long parseLongOrDefault(final String value, final long defaultValue) {

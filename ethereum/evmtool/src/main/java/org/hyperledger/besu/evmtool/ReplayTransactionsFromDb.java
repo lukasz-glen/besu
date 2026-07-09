@@ -419,8 +419,14 @@ public final class ReplayTransactionsFromDb {
                       + replayHeadStateRoot
                       + ")."));
 
+      final ReplayStepTimings intervalTimings = new ReplayStepTimings();
+      long lastProcessedBlockNumber = currentFromBlock - 1;
+
       for (long blockNumber = currentFromBlock; blockNumber <= toBlock; blockNumber++) {
         final long currentBlockNumber = blockNumber;
+        lastProcessedBlockNumber = currentBlockNumber;
+
+        final long readSourceStartNs = System.nanoTime();
         final Block block =
             sourceBlockchain
                 .getBlockByNumber(currentBlockNumber)
@@ -428,13 +434,15 @@ public final class ReplayTransactionsFromDb {
                     () ->
                         new IllegalStateException(
                             "Missing block in source DB for blockNumber=" + currentBlockNumber));
-
         final ProtocolSpec protocolSpec =
             protocolSchedule.getByBlockHeader(block.getHeader());
         final var blockProcessor = protocolSpec.getBlockProcessor();
+        intervalTimings.addReadSourceBlock(System.nanoTime() - readSourceStartNs);
 
+        final long processBlockStartNs = System.nanoTime();
         final BlockProcessingResult result =
             blockProcessor.processBlock(protocolContext, sourceBlockchain, mutableWorldState, block);
+        intervalTimings.addProcessBlock(System.nanoTime() - processBlockStartNs);
 
         if (!result.isSuccessful()) {
           System.err.println(
@@ -448,6 +456,7 @@ public final class ReplayTransactionsFromDb {
           break;
         }
 
+        final long writeCsvStartNs = System.nanoTime();
         // Expose per-transaction opcode usage back to this replay tool.
         opcodeCollectorProvider
             .getLastTracer()
@@ -467,14 +476,24 @@ public final class ReplayTransactionsFromDb {
 
                   writeBlockCsv(blockCsvDir, block, txOpcodes);
                 });
+        intervalTimings.addWriteCsv(System.nanoTime() - writeCsvStartNs);
 
+        final long writeProgressStartNs = System.nanoTime();
         // Persist progress only after successful persistence of this block.
         writeProgress(
             progressFile, currentBlockNumber, block.getHeader().getStateRoot().getBytes().toHexString());
+        intervalTimings.addWriteProgress(System.nanoTime() - writeProgressStartNs);
+
+        intervalTimings.incrementBlocks();
 
         if (currentBlockNumber % 100 == 0) {
-          System.out.println("Processed block " + currentBlockNumber + "/" + toBlock);
+          reportReplayStepTimings(currentBlockNumber, toBlock, intervalTimings);
+          intervalTimings.reset();
         }
+      }
+
+      if (intervalTimings.getBlocks() > 0) {
+        reportReplayStepTimings(lastProcessedBlockNumber, toBlock, intervalTimings);
       }
     } finally {
       try {
@@ -502,11 +521,98 @@ public final class ReplayTransactionsFromDb {
     }
   }
 
+  private static void reportReplayStepTimings(
+      final long currentBlockNumber, final long toBlock, final ReplayStepTimings timings) {
+    final long blocks = timings.getBlocks();
+    if (blocks == 0) {
+      return;
+    }
+    final double readMs = nanosToMillis(timings.getReadSourceBlockNs());
+    final double processMs = nanosToMillis(timings.getProcessBlockNs());
+    final double csvMs = nanosToMillis(timings.getWriteCsvNs());
+    final double progressMs = nanosToMillis(timings.getWriteProgressNs());
+    final double totalMs = nanosToMillis(timings.totalNs());
+    System.out.printf(
+        "Processed block %d/%d | last %d blocks (ms): readSource=%.2f processBlock=%.2f writeCsv=%.2f writeProgress=%.2f total=%.2f%n",
+        currentBlockNumber, toBlock, blocks, readMs, processMs, csvMs, progressMs, totalMs);
+    System.out.printf(
+        "  per-block avg (ms): readSource=%.3f processBlock=%.3f writeCsv=%.3f writeProgress=%.3f total=%.3f%n",
+        readMs / blocks,
+        processMs / blocks,
+        csvMs / blocks,
+        progressMs / blocks,
+        totalMs / blocks);
+  }
+
+  private static double nanosToMillis(final long nanos) {
+    return nanos / 1_000_000.0;
+  }
+
+  private static final class ReplayStepTimings {
+    private long readSourceBlockNs;
+    private long processBlockNs;
+    private long writeCsvNs;
+    private long writeProgressNs;
+    private long blocks;
+
+    void addReadSourceBlock(final long nanos) {
+      readSourceBlockNs += nanos;
+    }
+
+    void addProcessBlock(final long nanos) {
+      processBlockNs += nanos;
+    }
+
+    void addWriteCsv(final long nanos) {
+      writeCsvNs += nanos;
+    }
+
+    void addWriteProgress(final long nanos) {
+      writeProgressNs += nanos;
+    }
+
+    void incrementBlocks() {
+      blocks++;
+    }
+
+    long getReadSourceBlockNs() {
+      return readSourceBlockNs;
+    }
+
+    long getProcessBlockNs() {
+      return processBlockNs;
+    }
+
+    long getWriteCsvNs() {
+      return writeCsvNs;
+    }
+
+    long getWriteProgressNs() {
+      return writeProgressNs;
+    }
+
+    long getBlocks() {
+      return blocks;
+    }
+
+    long totalNs() {
+      return readSourceBlockNs + processBlockNs + writeCsvNs + writeProgressNs;
+    }
+
+    void reset() {
+      readSourceBlockNs = 0;
+      processBlockNs = 0;
+      writeCsvNs = 0;
+      writeProgressNs = 0;
+      blocks = 0;
+    }
+  }
+
   private static void writeBlockCsv(
       final Path blockCsvDir, final Block block, final List<TransactionReplayOpcodes> txResults) {
     final long blockNumber = block.getHeader().getNumber();
     final String blockHashHex = block.getHeader().getHash().toHexString();
-    final Path out = blockCsvDir.resolve(String.format("block.%d.%s", blockNumber, blockHashHex));
+    final Path out = blockCsvDir.resolve(String.format("block.%d.%s.csv", blockNumber, blockHashHex));
     final Path txsOut =
         blockCsvDir.resolve(String.format("txs.%d.%s.csv", blockNumber, blockHashHex));
 

@@ -1207,6 +1207,17 @@ public class MessageFrame {
   }
 
   /**
+   * Excludes a completed subcall's gas usage from this frame's {@link TxValues#CALL_GAS_USED} so
+   * per-call gas totals do not double-count nested execution.
+   *
+   * @param childFrame the completed child message frame
+   */
+  public void subtractCompletedSubcallGasUsage(final MessageFrame childFrame) {
+    opcodeExecutionCounts[TxValues.CALL_GAS_USED] -=
+        childFrame.getOpcodeExecutionCounts()[TxValues.CALL_GAS_USED];
+  }
+
+  /**
    * Returns the current message frame stack.
    *
    * @return the current message frame stack
@@ -1217,7 +1228,8 @@ public class MessageFrame {
 
   /**
    * Returns per-message execution statistics for <em>this</em> frame only: opcode byte counts (0–255),
-   * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}),
+   * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}; {@link
+   * TxValues#CALL_GAS_USED} excludes nested subcalls),
    * precompile-related slots ({@link TxValues#CALL_PRECOMPILE_BASE} … {@link
    * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), and EIP-2929-style address access totals
    * ({@link TxValues#ACCESS_ADDRESS_COLD_COUNT}, {@link TxValues#ACCESS_ADDRESS_WARM_COUNT}). Each

@@ -229,6 +229,7 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
 
   private void complete(final MessageFrame frame, final MessageFrame childFrame) {
     frame.setState(MessageFrame.State.CODE_EXECUTING);
+    frame.subtractCompletedSubcallGasUsage(childFrame);
 
     frame.incrementRemainingGas(childFrame.getRemainingGas());
     frame.addLogs(childFrame.getLogs());

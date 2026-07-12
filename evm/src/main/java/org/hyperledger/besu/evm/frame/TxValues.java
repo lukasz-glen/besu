@@ -87,6 +87,7 @@ public record TxValues(
     ArrayList<int[]> perCallOpcodeUsage) {
 
   public static final int CALL_ORDINAL_IDX = 256;
+  /** Gas consumed by this call frame only; subcall gas is subtracted on each subcall completion. */
   public static final int CALL_GAS_USED = 257;
   public static final int CALL_SUCCESS = 258; // 1 if the call succeeded, 0 if it failed
   public static final int CALL_MEMORY_WORD_SIZE = 259;

@@ -309,6 +309,7 @@ public abstract class AbstractCallOperation extends AbstractOperation {
    */
   public void complete(final MessageFrame frame, final MessageFrame childFrame) {
     frame.setState(MessageFrame.State.CODE_EXECUTING);
+    frame.subtractCompletedSubcallGasUsage(childFrame);
 
     final long outputOffset = outputDataOffset(frame);
     final long outputSize = outputDataLength(frame);

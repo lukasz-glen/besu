@@ -199,5 +199,8 @@ CREATE TABLE IF NOT EXISTS replay_call_opcode_counts (
     access_address_cold_count INTEGER NOT NULL DEFAULT 0,
     access_address_warm_count INTEGER NOT NULL DEFAULT 0,
     access_storage_cold_count INTEGER NOT NULL DEFAULT 0,
-    access_storage_warm_count INTEGER NOT NULL DEFAULT 0
+    access_storage_warm_count INTEGER NOT NULL DEFAULT 0,
+
+    -- index 281: TxValues.KECCAK256_WORDS_PROCESSED
+    keccak256_words_processed INTEGER NOT NULL DEFAULT 0
 );

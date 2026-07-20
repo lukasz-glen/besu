@@ -1231,7 +1231,8 @@ public class MessageFrame {
    * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}; {@link
    * TxValues#CALL_GAS_USED} excludes nested subcalls),
    * precompile-related slots ({@link TxValues#CALL_PRECOMPILE_BASE} … {@link
-   * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), and EIP-2929-style address access totals
+   * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), {@link
+   * TxValues#KECCAK256_WORDS_PROCESSED}, and EIP-2929-style address access totals
    * ({@link TxValues#ACCESS_ADDRESS_COLD_COUNT}, {@link TxValues#ACCESS_ADDRESS_WARM_COUNT}). Each
    * nested call or contract creation has its own array of length {@link
    * TxValues#CALL_OPCODE_USAGE_VECTOR_LENGTH}.

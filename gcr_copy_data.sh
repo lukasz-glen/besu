@@ -47,6 +47,7 @@ build_call_opcode_copy_columns() {
   cols+=",call_precompile_blake2bf_rounds_processed"
   cols+=",access_address_cold_count,access_address_warm_count"
   cols+=",access_storage_cold_count,access_storage_warm_count"
+  cols+=",keccak256_words_processed"
   printf '%s' "$cols"
 }
 
@@ -68,9 +69,9 @@ copy_call_opcode_counts() {
   local block_id="$1"
   local txs_file="$2"
 
-  # txs CSV: transactionIndex, then 281 usage-vector fields (empty means 0); no header row.
+  # txs CSV: transactionIndex, then 282 usage-vector fields (empty means 0); no header row.
   awk -F, -v block_id="$block_id" '
-    BEGIN { csv_fields = 282 }
+    BEGIN { csv_fields = 283 }
     NF > 0 {
       printf "%s", block_id
       for (i = 1; i <= csv_fields; i++) {

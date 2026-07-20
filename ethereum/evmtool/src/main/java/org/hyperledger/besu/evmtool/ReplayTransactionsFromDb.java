@@ -97,6 +97,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Re-executes blocks from a source Besu database into an existing replay Besu database.
@@ -422,73 +427,105 @@ public final class ReplayTransactionsFromDb {
       final ReplayStepTimings intervalTimings = new ReplayStepTimings();
       long lastProcessedBlockNumber = currentFromBlock - 1;
 
-      for (long blockNumber = currentFromBlock; blockNumber <= toBlock; blockNumber++) {
-        final long currentBlockNumber = blockNumber;
-        lastProcessedBlockNumber = currentBlockNumber;
+      final BlockingQueue<PrefetchedBlock> prefetchQueue = new ArrayBlockingQueue<>(3);
+      final AtomicBoolean stopPrefetch = new AtomicBoolean(false);
+      final AtomicReference<Throwable> prefetchError = new AtomicReference<>();
+      final Thread prefetchThread =
+          startBlockPrefetchThread(
+              sourceBlockchain, currentFromBlock, toBlock, prefetchQueue, stopPrefetch, prefetchError);
 
-        final long readSourceStartNs = System.nanoTime();
-        final Block block =
-            sourceBlockchain
-                .getBlockByNumber(currentBlockNumber)
-                .orElseThrow(
-                    () ->
-                        new IllegalStateException(
-                            "Missing block in source DB for blockNumber=" + currentBlockNumber));
-        final ProtocolSpec protocolSpec =
-            protocolSchedule.getByBlockHeader(block.getHeader());
-        final var blockProcessor = protocolSpec.getBlockProcessor();
-        intervalTimings.addReadSourceBlock(System.nanoTime() - readSourceStartNs);
-
-        final long processBlockStartNs = System.nanoTime();
-        final BlockProcessingResult result =
-            blockProcessor.processBlock(protocolContext, sourceBlockchain, mutableWorldState, block);
-        intervalTimings.addProcessBlock(System.nanoTime() - processBlockStartNs);
-
-        if (!result.isSuccessful()) {
-          System.err.println(
-              "Block processing failed at blockNumber="
-                  + currentBlockNumber
-                  + " error="
-                  + result.errorMessage.orElse("unknown"));
-          if (result.cause.isPresent()) {
-            result.cause.get().printStackTrace(System.err);
+      try {
+        while (true) {
+          final PrefetchedBlock prefetched;
+          try {
+            prefetched = prefetchQueue.take();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for prefetched block", e);
           }
-          break;
+
+          if (prefetched.isEndOfStream()) {
+            break;
+          }
+          if (prefetched.error() != null) {
+            throw new RuntimeException("Block prefetch failed", prefetched.error());
+          }
+
+          final long currentBlockNumber = prefetched.blockNumber();
+          final Block block = prefetched.block();
+          lastProcessedBlockNumber = currentBlockNumber;
+          intervalTimings.addReadSourceBlock(prefetched.readNanos());
+
+          final ProtocolSpec protocolSpec = protocolSchedule.getByBlockHeader(block.getHeader());
+          final var blockProcessor = protocolSpec.getBlockProcessor();
+
+          final long processBlockStartNs = System.nanoTime();
+          final BlockProcessingResult result =
+              blockProcessor.processBlock(
+                  protocolContext, sourceBlockchain, mutableWorldState, block);
+          intervalTimings.addProcessBlock(System.nanoTime() - processBlockStartNs);
+
+          if (!result.isSuccessful()) {
+            System.err.println(
+                "Block processing failed at blockNumber="
+                    + currentBlockNumber
+                    + " error="
+                    + result.errorMessage.orElse("unknown"));
+            if (result.cause.isPresent()) {
+              result.cause.get().printStackTrace(System.err);
+            }
+            break;
+          }
+
+          final long writeCsvStartNs = System.nanoTime();
+          // Expose per-transaction opcode usage back to this replay tool.
+          opcodeCollectorProvider
+              .getLastTracer()
+              .ifPresent(
+                  tracer -> {
+                    final List<TransactionReplayOpcodes> txOpcodes = tracer.getTransactionResults();
+                    final List<Transaction> blockTxs = block.getBody().getTransactions();
+                    if (txOpcodes.size() != blockTxs.size()) {
+                      System.err.println(
+                          "Opcode tracer mismatch at blockNumber="
+                              + currentBlockNumber
+                              + " txsInBlock="
+                              + blockTxs.size()
+                              + " tracedTxs="
+                              + txOpcodes.size());
+                    }
+
+                    writeBlockCsv(blockCsvDir, block, txOpcodes);
+                  });
+          intervalTimings.addWriteCsv(System.nanoTime() - writeCsvStartNs);
+
+          final long writeProgressStartNs = System.nanoTime();
+          // Persist progress only after successful persistence of this block.
+          writeProgress(
+              progressFile,
+              currentBlockNumber,
+              block.getHeader().getStateRoot().getBytes().toHexString());
+          intervalTimings.addWriteProgress(System.nanoTime() - writeProgressStartNs);
+
+          intervalTimings.incrementBlocks();
+
+          if (currentBlockNumber % 100 == 0) {
+            reportReplayStepTimings(currentBlockNumber, toBlock, intervalTimings);
+            intervalTimings.reset();
+          }
         }
 
-        final long writeCsvStartNs = System.nanoTime();
-        // Expose per-transaction opcode usage back to this replay tool.
-        opcodeCollectorProvider
-            .getLastTracer()
-            .ifPresent(
-                tracer -> {
-                  final List<TransactionReplayOpcodes> txOpcodes = tracer.getTransactionResults();
-                  final List<Transaction> blockTxs = block.getBody().getTransactions();
-                  if (txOpcodes.size() != blockTxs.size()) {
-                    System.err.println(
-                        "Opcode tracer mismatch at blockNumber="
-                            + currentBlockNumber
-                            + " txsInBlock="
-                            + blockTxs.size()
-                            + " tracedTxs="
-                            + txOpcodes.size());
-                  }
-
-                  writeBlockCsv(blockCsvDir, block, txOpcodes);
-                });
-        intervalTimings.addWriteCsv(System.nanoTime() - writeCsvStartNs);
-
-        final long writeProgressStartNs = System.nanoTime();
-        // Persist progress only after successful persistence of this block.
-        writeProgress(
-            progressFile, currentBlockNumber, block.getHeader().getStateRoot().getBytes().toHexString());
-        intervalTimings.addWriteProgress(System.nanoTime() - writeProgressStartNs);
-
-        intervalTimings.incrementBlocks();
-
-        if (currentBlockNumber % 100 == 0) {
-          reportReplayStepTimings(currentBlockNumber, toBlock, intervalTimings);
-          intervalTimings.reset();
+        final Throwable readerFailure = prefetchError.get();
+        if (readerFailure != null) {
+          throw new RuntimeException("Block prefetch failed", readerFailure);
+        }
+      } finally {
+        stopPrefetch.set(true);
+        prefetchThread.interrupt();
+        try {
+          prefetchThread.join(TimeUnit.SECONDS.toMillis(5));
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       }
 
@@ -518,6 +555,82 @@ public final class ReplayTransactionsFromDb {
       } catch (final Exception e) {
         System.err.println("Failed to close sourceRocksDbFactory: " + e.getMessage());
       }
+    }
+  }
+
+  private static Thread startBlockPrefetchThread(
+      final MutableBlockchain sourceBlockchain,
+      final long fromBlock,
+      final long toBlock,
+      final BlockingQueue<PrefetchedBlock> prefetchQueue,
+      final AtomicBoolean stopPrefetch,
+      final AtomicReference<Throwable> prefetchError) {
+    final Thread prefetchThread =
+        new Thread(
+            () -> {
+              try {
+                for (long blockNumber = fromBlock;
+                    blockNumber <= toBlock && !stopPrefetch.get();
+                    blockNumber++) {
+                  final long currentBlockNumber = blockNumber;
+                  final long readSourceStartNs = System.nanoTime();
+                  final Block block =
+                      sourceBlockchain
+                          .getBlockByNumber(currentBlockNumber)
+                          .orElseThrow(
+                              () ->
+                                  new IllegalStateException(
+                                      "Missing block in source DB for blockNumber="
+                                          + currentBlockNumber));
+                  final long readNanos = System.nanoTime() - readSourceStartNs;
+
+                  while (!stopPrefetch.get()) {
+                    try {
+                      if (prefetchQueue.offer(
+                          new PrefetchedBlock(currentBlockNumber, block, readNanos, null),
+                          100,
+                          TimeUnit.MILLISECONDS)) {
+                        break;
+                      }
+                    } catch (final InterruptedException e) {
+                      Thread.currentThread().interrupt();
+                      return;
+                    }
+                  }
+                }
+
+                if (!stopPrefetch.get()) {
+                  prefetchQueue.put(PrefetchedBlock.endOfStream());
+                }
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              } catch (final Throwable t) {
+                prefetchError.set(t);
+                try {
+                  prefetchQueue.offer(new PrefetchedBlock(-1L, null, 0L, t), 1, TimeUnit.SECONDS);
+                } catch (final InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                }
+              }
+            },
+            "block-prefetch");
+    prefetchThread.setDaemon(true);
+    prefetchThread.start();
+    return prefetchThread;
+  }
+
+  /**
+   * A block read ahead of processing. {@link #isEndOfStream()} marks successful completion of the
+   * prefetch range; {@link #error()} carries a prefetch failure.
+   */
+  private record PrefetchedBlock(
+      long blockNumber, Block block, long readNanos, Throwable error) {
+    static PrefetchedBlock endOfStream() {
+      return new PrefetchedBlock(-1L, null, 0L, null);
+    }
+
+    boolean isEndOfStream() {
+      return block == null && error == null;
     }
   }
 

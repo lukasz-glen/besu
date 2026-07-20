@@ -15,11 +15,14 @@
 package org.hyperledger.besu.evm.operation;
 
 import static org.hyperledger.besu.crypto.Hash.keccak256;
+import static org.hyperledger.besu.evm.internal.Words.clampedToInt;
 import static org.hyperledger.besu.evm.internal.Words.clampedToLong;
+import static org.hyperledger.besu.evm.internal.Words.numWords;
 
 import org.hyperledger.besu.evm.EVM;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 
 import org.apache.tuweni.bytes.Bytes;
@@ -47,6 +50,8 @@ public class Keccak256Operation extends AbstractOperation {
     }
 
     final Bytes bytes = frame.readMutableMemory(from, length);
+    frame.getOpcodeExecutionCounts()[TxValues.KECCAK256_WORDS_PROCESSED] +=
+        numWords(clampedToInt(length));
     frame.pushStackItem(keccak256(bytes));
     return new OperationResult(cost, null);
   }

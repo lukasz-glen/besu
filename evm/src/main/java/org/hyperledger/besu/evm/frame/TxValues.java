@@ -103,7 +103,9 @@ public record TxValues(
   public static final int ACCESS_ADDRESS_WARM_COUNT = 278;
   public static final int ACCESS_STORAGE_COLD_COUNT = 279;
   public static final int ACCESS_STORAGE_WARM_COUNT = 280;
-  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 281;
+  /** Aggregated 32-byte words hashed by KECCAK256 in this call frame. */
+  public static final int KECCAK256_WORDS_PROCESSED = 281;
+  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 282;
 
   /**
    * Creates a new TxValues for the initial (depth-0) frame of a transaction. EIP-8037 gas tracking

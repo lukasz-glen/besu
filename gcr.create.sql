@@ -207,5 +207,11 @@ CREATE TABLE IF NOT EXISTS replay_call_opcode_counts (
     keccak256_words_processed INTEGER NOT NULL DEFAULT 0,
 
     -- index 282: TxValues.PARENT_CALL_ORDINAL_IDX (-1 for the root call)
-    parent_call_ordinal INTEGER NOT NULL
+    parent_call_ordinal INTEGER NOT NULL,
+
+    -- index 283: TxValues.CALL_TYPE_IDX (0=CALL, 1=STATICCALL, 2=DELEGATECALL, 3=CREATE, 4=CREATE2)
+    call_type INTEGER NOT NULL,
+
+    -- called address (message call) or created contract address; not part of the int usage vector
+    call_target_address CHAR(42) NOT NULL
 );

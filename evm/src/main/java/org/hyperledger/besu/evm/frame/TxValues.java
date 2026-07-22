@@ -63,6 +63,8 @@ import org.apache.tuweni.bytes.Bytes32;
  * @param perCallOpcodeUsage Copies of each frame's usage vector (opcodes, call metadata, and
  *     per-precompile counts), indexed by creation ordinal; entries are appended as frames complete
  *     (typically before {@code traceEndTransaction} runs, the root frame's slot is filled)
+ * @param perCallTargetAddress Called address (message call) or created contract address (create),
+ *     indexed by the same creation ordinal as {@code perCallOpcodeUsage}
  */
 public record TxValues(
     BlockHashLookup blockHashLookup,
@@ -84,7 +86,8 @@ public record TxValues(
     UndoScalar<Long> stateGasReservoir,
     long[] stateGasSpillBurned,
     AtomicInteger callOrdinalAllocator,
-    ArrayList<int[]> perCallOpcodeUsage) {
+    ArrayList<int[]> perCallOpcodeUsage,
+    ArrayList<Address> perCallTargetAddress) {
 
   public static final int CALL_ORDINAL_IDX = 256;
   /** Gas consumed by this call frame only; subcall gas is subtracted on each subcall completion. */
@@ -109,7 +112,23 @@ public record TxValues(
    * Parent frame's {@link #CALL_ORDINAL_IDX}; {@code -1} for the transaction's root (depth-0) call.
    */
   public static final int PARENT_CALL_ORDINAL_IDX = 282;
-  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 283;
+  /**
+   * How this frame was spawned: {@link #CALL_TYPE_CALL}, {@link #CALL_TYPE_STATICCALL}, {@link
+   * #CALL_TYPE_DELEGATECALL}, {@link #CALL_TYPE_CREATE}, or {@link #CALL_TYPE_CREATE2}.
+   */
+  public static final int CALL_TYPE_IDX = 283;
+  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 284;
+
+  /** Root message call or {@code CALL} / {@code CALLCODE}. */
+  public static final int CALL_TYPE_CALL = 0;
+  /** {@code STATICCALL}. */
+  public static final int CALL_TYPE_STATICCALL = 1;
+  /** {@code DELEGATECALL}. */
+  public static final int CALL_TYPE_DELEGATECALL = 2;
+  /** {@code CREATE}, including a contract-creation transaction's root frame. */
+  public static final int CALL_TYPE_CREATE = 3;
+  /** {@code CREATE2}. */
+  public static final int CALL_TYPE_CREATE2 = 4;
 
   /**
    * Creates a new TxValues for the initial (depth-0) frame of a transaction. EIP-8037 gas tracking
@@ -156,6 +175,7 @@ public record TxValues(
         new UndoScalar<>(0L),
         new long[] {0L},
         new AtomicInteger(0),
+        new ArrayList<>(),
         new ArrayList<>());
   }
 
@@ -163,15 +183,18 @@ public record TxValues(
    * Reserves the creation-order index for the next call in this transaction.
    *
    * @param parentCallOrdinal parent frame's call ordinal, or {@code -1} for the root call
+   * @param targetAddress called address, or the address of the contract being created
    * @return opcode execution counts for the call being built (includes CALL_ORDINAL and
    *     PARENT_CALL_ORDINAL)
    */
-  public int[] allocateCallOpcodeExecutionCounts(final int parentCallOrdinal) {
+  public int[] allocateCallOpcodeExecutionCounts(
+      final int parentCallOrdinal, final Address targetAddress) {
     final int callOrdinal = callOrdinalAllocator.getAndIncrement();
     final int[] opcodeExecutionCounts = new int[CALL_OPCODE_USAGE_VECTOR_LENGTH];
     opcodeExecutionCounts[CALL_ORDINAL_IDX] = callOrdinal;
     opcodeExecutionCounts[PARENT_CALL_ORDINAL_IDX] = parentCallOrdinal;
     perCallOpcodeUsage.add(opcodeExecutionCounts);
+    perCallTargetAddress.add(targetAddress);
     return opcodeExecutionCounts;
   }
 

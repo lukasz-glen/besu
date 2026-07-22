@@ -79,6 +79,7 @@ import org.hyperledger.besu.services.BesuConfigurationImpl;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.datatypes.AccessListEntry;
+import org.hyperledger.besu.datatypes.Address;
 
 import org.hyperledger.besu.ethereum.worldstate.WorldStatePreimageStorage;
 import org.hyperledger.besu.ethereum.core.MutableWorldState;
@@ -758,8 +759,9 @@ public final class ReplayTransactionsFromDb {
               txsOut, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
         for (final TransactionReplayOpcodes tx : txResults) {
           final int txIndex = tx.transactionIndexInBlock();
-          for (final int[] callOpcodeExecutionCounts : tx.perCallOpcodeExecutionCounts()) {
+          for (final CallReplayOpcodes call : tx.perCallOpcodeExecutionCounts()) {
             w.write(Integer.toString(txIndex));
+            final int[] callOpcodeExecutionCounts = call.opcodeExecutionCounts();
             final int len = callOpcodeExecutionCounts.length;
             for (int i = 0; i < len; i++) {
               w.write(',');
@@ -768,6 +770,8 @@ public final class ReplayTransactionsFromDb {
                 w.write(Integer.toString(v));
               }
             }
+            w.write(',');
+            w.write(call.targetAddress().toHexString());
             w.newLine();
           }
         }
@@ -1045,8 +1049,18 @@ public final class ReplayTransactionsFromDb {
       final Hash txHash = tx.getHash();
       final TxValues txValues = txValuesByTxHash.get(txHash);
 
-      final List<int[]> perCallOpcodeExecutionCounts =
-          txValues == null ? List.of() : List.copyOf(txValues.perCallOpcodeUsage());
+      final List<CallReplayOpcodes> perCallOpcodeExecutionCounts;
+      if (txValues == null) {
+        perCallOpcodeExecutionCounts = List.of();
+      } else {
+        final List<int[]> vectors = txValues.perCallOpcodeUsage();
+        final List<Address> targets = txValues.perCallTargetAddress();
+        final ArrayList<CallReplayOpcodes> calls = new ArrayList<>(vectors.size());
+        for (int i = 0; i < vectors.size(); i++) {
+          calls.add(new CallReplayOpcodes(vectors.get(i), targets.get(i)));
+        }
+        perCallOpcodeExecutionCounts = List.copyOf(calls);
+      }
       final int accessListAddressCount;
       final int accessListStorageSlotCount;
       final Optional<List<AccessListEntry>> maybeAccessList = tx.getAccessList();
@@ -1085,8 +1099,11 @@ public final class ReplayTransactionsFromDb {
       int transactionIndexInBlock,
       boolean succeeded,
       long gasUsed,
-      List<int[]> perCallOpcodeExecutionCounts,
+      List<CallReplayOpcodes> perCallOpcodeExecutionCounts,
       int accessListAddressCount,
       int accessListStorageSlotCount) {}
+
+  /** Per-call usage vector plus the call/create target address. */
+  private record CallReplayOpcodes(int[] opcodeExecutionCounts, Address targetAddress) {}
 }
 

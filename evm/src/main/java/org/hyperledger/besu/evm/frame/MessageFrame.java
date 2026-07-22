@@ -1230,7 +1230,7 @@ public class MessageFrame {
    * Returns per-message execution statistics for <em>this</em> frame only: opcode byte counts (0–255),
    * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}; {@link
    * TxValues#CALL_GAS_USED} excludes nested subcalls; {@link TxValues#PARENT_CALL_ORDINAL_IDX} is
-   * {@code -1} for the root call),
+   * {@code -1} for the root call; {@link TxValues#CALL_TYPE_IDX} records how the frame was spawned),
    * precompile-related slots ({@link TxValues#CALL_PRECOMPILE_BASE} … {@link
    * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), {@link
    * TxValues#KECCAK256_WORDS_PROCESSED}, and EIP-2929-style address access totals
@@ -1472,6 +1472,8 @@ public class MessageFrame {
     private Optional<Eip7928AccessList> eip7928AccessList = Optional.empty();
 
     private Optional<List<VersionedHash>> versionedHashes = Optional.empty();
+    /** Unset until {@link #callType(int)}; then written into the usage vector at build. */
+    private int callType = -1;
 
     /** Instantiates a new Builder. */
     public Builder() {
@@ -1498,6 +1500,17 @@ public class MessageFrame {
      */
     public Builder type(final Type type) {
       this.type = type;
+      return this;
+    }
+
+    /**
+     * Sets the call-type usage-vector value ({@link TxValues#CALL_TYPE_IDX}).
+     *
+     * @param callType one of {@link TxValues#CALL_TYPE_CALL} … {@link TxValues#CALL_TYPE_CREATE2}
+     * @return the builder
+     */
+    public Builder callType(final int callType) {
+      this.callType = callType;
       return this;
     }
 
@@ -1828,7 +1841,14 @@ public class MessageFrame {
               ? -1
               : parentMessageFrame.opcodeExecutionCounts[TxValues.CALL_ORDINAL_IDX];
       final int[] opcodeExecutionCounts =
-          newTxValues.allocateCallOpcodeExecutionCounts(parentCallOrdinal);
+          newTxValues.allocateCallOpcodeExecutionCounts(parentCallOrdinal, contract);
+      final int resolvedCallType =
+          callType >= 0
+              ? callType
+              : (type == Type.CONTRACT_CREATION
+                  ? TxValues.CALL_TYPE_CREATE
+                  : TxValues.CALL_TYPE_CALL);
+      opcodeExecutionCounts[TxValues.CALL_TYPE_IDX] = resolvedCallType;
 
       MessageFrame messageFrame =
           new MessageFrame(

@@ -179,6 +179,20 @@ public abstract class AbstractCallOperation extends AbstractOperation {
     return false;
   }
 
+  /**
+   * Usage-vector call type for the child frame spawned by this opcode.
+   *
+   * @return {@link TxValues#CALL_TYPE_CALL}, {@link TxValues#CALL_TYPE_STATICCALL}, or {@link
+   *     TxValues#CALL_TYPE_DELEGATECALL}
+   */
+  protected int callType() {
+    return switch (getOpcode()) {
+      case 0xfa -> TxValues.CALL_TYPE_STATICCALL;
+      case 0xf4 -> TxValues.CALL_TYPE_DELEGATECALL;
+      default -> TxValues.CALL_TYPE_CALL;
+    };
+  }
+
   @Override
   public OperationResult execute(final MessageFrame frame, final EVM evm) {
     // manual check because some reads won't come until the "complete" step.
@@ -287,6 +301,7 @@ public abstract class AbstractCallOperation extends AbstractOperation {
             .apparentValue(apparentValue(frame))
             .code(code)
             .isStatic(isStatic(frame))
+            .callType(callType())
             .completer(child -> complete(frame, child));
 
     if (frame.getEip7928AccessList().isPresent()) {

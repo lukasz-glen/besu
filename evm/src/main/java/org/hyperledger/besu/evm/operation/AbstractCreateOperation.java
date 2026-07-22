@@ -27,6 +27,7 @@ import org.hyperledger.besu.evm.account.MutableAccount;
 import org.hyperledger.besu.evm.frame.ExceptionalHaltReason;
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.frame.SoftFailureReason;
+import org.hyperledger.besu.evm.frame.TxValues;
 import org.hyperledger.besu.evm.gascalculator.GasCalculator;
 import org.hyperledger.besu.evm.internal.Words;
 
@@ -205,6 +206,8 @@ public abstract class AbstractCreateOperation extends AbstractOperation {
             .value(value)
             .apparentValue(value)
             .code(code)
+            .callType(
+                getOpcode() == 0xf5 ? TxValues.CALL_TYPE_CREATE2 : TxValues.CALL_TYPE_CREATE)
             .completer(child -> complete(parent, child));
 
     if (parent.getEip7928AccessList().isPresent()) {

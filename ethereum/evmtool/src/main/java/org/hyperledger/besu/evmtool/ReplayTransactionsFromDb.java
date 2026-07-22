@@ -78,6 +78,7 @@ import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
 import org.hyperledger.besu.services.BesuConfigurationImpl;
 import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Hash;
+import org.hyperledger.besu.datatypes.AccessListEntry;
 
 import org.hyperledger.besu.ethereum.worldstate.WorldStatePreimageStorage;
 import org.hyperledger.besu.ethereum.core.MutableWorldState;
@@ -730,7 +731,8 @@ public final class ReplayTransactionsFromDb {
         blockCsvDir.resolve(String.format("txs.%d.%s.csv", blockNumber, blockHashHex));
 
     final StringBuilder sb = new StringBuilder(128 + txResults.size() * 64);
-    sb.append("transactionIndexInBlock,transactionHash,succeeded,gasUsed\n");
+    sb.append(
+        "transactionIndexInBlock,transactionHash,succeeded,gasUsed,accessListAddressCount,accessListStorageSlotCount\n");
     for (final TransactionReplayOpcodes tx : txResults) {
       sb.append(tx.transactionIndexInBlock())
           .append(',')
@@ -739,6 +741,10 @@ public final class ReplayTransactionsFromDb {
           .append(tx.succeeded())
           .append(',')
           .append(tx.gasUsed())
+          .append(',')
+          .append(tx.accessListAddressCount())
+          .append(',')
+          .append(tx.accessListStorageSlotCount())
           .append('\n');
     }
 
@@ -1041,10 +1047,28 @@ public final class ReplayTransactionsFromDb {
 
       final List<int[]> perCallOpcodeExecutionCounts =
           txValues == null ? List.of() : List.copyOf(txValues.perCallOpcodeUsage());
+      final int accessListAddressCount;
+      final int accessListStorageSlotCount;
+      final Optional<List<AccessListEntry>> maybeAccessList = tx.getAccessList();
+      if (maybeAccessList.isEmpty()) {
+        accessListAddressCount = 0;
+        accessListStorageSlotCount = 0;
+      } else {
+        final List<AccessListEntry> accessList = maybeAccessList.get();
+        accessListAddressCount = accessList.size();
+        accessListStorageSlotCount =
+            accessList.stream().mapToInt(entry -> entry.storageKeys().size()).sum();
+      }
 
       transactionResults.add(
           new TransactionReplayOpcodes(
-              txHash, txIndexInBlock++, status, gasUsed, perCallOpcodeExecutionCounts));
+              txHash,
+              txIndexInBlock++,
+              status,
+              gasUsed,
+              perCallOpcodeExecutionCounts,
+              accessListAddressCount,
+              accessListStorageSlotCount));
     }
 
     public List<TransactionReplayOpcodes> getTransactionResults() {
@@ -1061,6 +1085,8 @@ public final class ReplayTransactionsFromDb {
       int transactionIndexInBlock,
       boolean succeeded,
       long gasUsed,
-      List<int[]> perCallOpcodeExecutionCounts) {}
+      List<int[]> perCallOpcodeExecutionCounts,
+      int accessListAddressCount,
+      int accessListStorageSlotCount) {}
 }
 

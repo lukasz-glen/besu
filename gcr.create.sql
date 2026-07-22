@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS replay_block_transactions (
     transaction_index_in_block INTEGER     NOT NULL,
     transaction_hash           CHAR(66)    NOT NULL,
     succeeded                  BOOLEAN     NOT NULL,
-    gas_used                   BIGINT      NOT NULL
+    gas_used                   BIGINT      NOT NULL,
+    access_list_address_count  INTEGER     NOT NULL,
+    access_list_storage_slot_count INTEGER NOT NULL
 );
 
 

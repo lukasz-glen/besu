@@ -57,12 +57,12 @@ copy_block_transactions() {
   local block_id="$1"
   local block_file="$2"
 
-  # block CSV header: transactionIndexInBlock,transactionHash,succeeded,gasUsed
+  # block CSV header: transactionIndexInBlock,transactionHash,succeeded,gasUsed,accessListAddressCount,accessListStorageSlotCount
   tail -n +2 "$block_file" | awk -v block_id="$block_id" '
     BEGIN { OFS = "," }
     NF > 0 { print block_id, $0 }
   ' | "${PSQL[@]}" -c \
-    "COPY replay_block_transactions (block_id, transaction_index_in_block, transaction_hash, succeeded, gas_used) FROM STDIN WITH (FORMAT csv);"
+    "COPY replay_block_transactions (block_id, transaction_index_in_block, transaction_hash, succeeded, gas_used, access_list_address_count, access_list_storage_slot_count) FROM STDIN WITH (FORMAT csv);"
 }
 
 copy_call_opcode_counts() {

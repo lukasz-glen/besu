@@ -204,5 +204,8 @@ CREATE TABLE IF NOT EXISTS replay_call_opcode_counts (
     access_storage_warm_count INTEGER NOT NULL DEFAULT 0,
 
     -- index 281: TxValues.KECCAK256_WORDS_PROCESSED
-    keccak256_words_processed INTEGER NOT NULL DEFAULT 0
+    keccak256_words_processed INTEGER NOT NULL DEFAULT 0,
+
+    -- index 282: TxValues.PARENT_CALL_ORDINAL_IDX (-1 for the root call)
+    parent_call_ordinal INTEGER NOT NULL
 );

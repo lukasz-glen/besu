@@ -105,7 +105,11 @@ public record TxValues(
   public static final int ACCESS_STORAGE_WARM_COUNT = 280;
   /** Aggregated 32-byte words hashed by KECCAK256 in this call frame. */
   public static final int KECCAK256_WORDS_PROCESSED = 281;
-  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 282;
+  /**
+   * Parent frame's {@link #CALL_ORDINAL_IDX}; {@code -1} for the transaction's root (depth-0) call.
+   */
+  public static final int PARENT_CALL_ORDINAL_IDX = 282;
+  public static final int CALL_OPCODE_USAGE_VECTOR_LENGTH = 283;
 
   /**
    * Creates a new TxValues for the initial (depth-0) frame of a transaction. EIP-8037 gas tracking
@@ -158,12 +162,15 @@ public record TxValues(
   /**
    * Reserves the creation-order index for the next call in this transaction.
    *
-   * @return opcode execution counts for the call being built (includes CALL_ORDINAL)
+   * @param parentCallOrdinal parent frame's call ordinal, or {@code -1} for the root call
+   * @return opcode execution counts for the call being built (includes CALL_ORDINAL and
+   *     PARENT_CALL_ORDINAL)
    */
-  public int[] allocateCallOpcodeExecutionCounts() {
+  public int[] allocateCallOpcodeExecutionCounts(final int parentCallOrdinal) {
     final int callOrdinal = callOrdinalAllocator.getAndIncrement();
     final int[] opcodeExecutionCounts = new int[CALL_OPCODE_USAGE_VECTOR_LENGTH];
     opcodeExecutionCounts[CALL_ORDINAL_IDX] = callOrdinal;
+    opcodeExecutionCounts[PARENT_CALL_ORDINAL_IDX] = parentCallOrdinal;
     perCallOpcodeUsage.add(opcodeExecutionCounts);
     return opcodeExecutionCounts;
   }

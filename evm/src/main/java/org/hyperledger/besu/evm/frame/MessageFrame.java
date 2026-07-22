@@ -1229,7 +1229,8 @@ public class MessageFrame {
   /**
    * Returns per-message execution statistics for <em>this</em> frame only: opcode byte counts (0–255),
    * call metadata ({@link TxValues#CALL_ORDINAL_IDX} … {@link TxValues#EXP_OPERATION_BYTES}; {@link
-   * TxValues#CALL_GAS_USED} excludes nested subcalls),
+   * TxValues#CALL_GAS_USED} excludes nested subcalls; {@link TxValues#PARENT_CALL_ORDINAL_IDX} is
+   * {@code -1} for the root call),
    * precompile-related slots ({@link TxValues#CALL_PRECOMPILE_BASE} … {@link
    * TxValues#CALL_PRECOMPILE_BLAKE2BF_ROUNDS_PROCESSED}), {@link
    * TxValues#KECCAK256_WORDS_PROCESSED}, and EIP-2929-style address access totals
@@ -1822,7 +1823,12 @@ public class MessageFrame {
         parentMessageFrame.warmUpAddress(contract);
       }
 
-      final int[] opcodeExecutionCounts = newTxValues.allocateCallOpcodeExecutionCounts();
+      final int parentCallOrdinal =
+          parentMessageFrame == null
+              ? -1
+              : parentMessageFrame.opcodeExecutionCounts[TxValues.CALL_ORDINAL_IDX];
+      final int[] opcodeExecutionCounts =
+          newTxValues.allocateCallOpcodeExecutionCounts(parentCallOrdinal);
 
       MessageFrame messageFrame =
           new MessageFrame(

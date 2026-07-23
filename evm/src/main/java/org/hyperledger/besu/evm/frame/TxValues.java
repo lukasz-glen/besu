@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.HashBasedTable;
+import org.apache.tuweni.bytes.Bytes;
 import org.apache.tuweni.bytes.Bytes32;
 
 /**
@@ -65,6 +66,8 @@ import org.apache.tuweni.bytes.Bytes32;
  *     (typically before {@code traceEndTransaction} runs, the root frame's slot is filled)
  * @param perCallTargetAddress Called address (message call) or created contract address (create),
  *     indexed by the same creation ordinal as {@code perCallOpcodeUsage}
+ * @param perCallFunctionSelector First 4 calldata bytes as 8 hex chars for CALL/STATICCALL/
+ *     DELEGATECALL; {@link #MISSING_FUNCTION_SELECTOR} for CREATE/CREATE2 or short calldata
  */
 public record TxValues(
     BlockHashLookup blockHashLookup,
@@ -87,7 +90,8 @@ public record TxValues(
     long[] stateGasSpillBurned,
     AtomicInteger callOrdinalAllocator,
     ArrayList<int[]> perCallOpcodeUsage,
-    ArrayList<Address> perCallTargetAddress) {
+    ArrayList<Address> perCallTargetAddress,
+    ArrayList<String> perCallFunctionSelector) {
 
   public static final int CALL_ORDINAL_IDX = 256;
   /** Gas consumed by this call frame only; subcall gas is subtracted on each subcall completion. */
@@ -129,6 +133,12 @@ public record TxValues(
   public static final int CALL_TYPE_CREATE = 3;
   /** {@code CREATE2}. */
   public static final int CALL_TYPE_CREATE2 = 4;
+
+  /**
+   * Placeholder when there is no Solidity function selector (CREATE/CREATE2, or calldata shorter
+   * than 4 bytes).
+   */
+  public static final String MISSING_FUNCTION_SELECTOR = "gggggggg";
 
   /**
    * Creates a new TxValues for the initial (depth-0) frame of a transaction. EIP-8037 gas tracking
@@ -176,6 +186,7 @@ public record TxValues(
         new long[] {0L},
         new AtomicInteger(0),
         new ArrayList<>(),
+        new ArrayList<>(),
         new ArrayList<>());
   }
 
@@ -184,18 +195,43 @@ public record TxValues(
    *
    * @param parentCallOrdinal parent frame's call ordinal, or {@code -1} for the root call
    * @param targetAddress called address, or the address of the contract being created
+   * @param callType one of {@link #CALL_TYPE_CALL} … {@link #CALL_TYPE_CREATE2}
+   * @param inputData calldata / initcode for this frame
    * @return opcode execution counts for the call being built (includes CALL_ORDINAL and
    *     PARENT_CALL_ORDINAL)
    */
   public int[] allocateCallOpcodeExecutionCounts(
-      final int parentCallOrdinal, final Address targetAddress) {
+      final int parentCallOrdinal,
+      final Address targetAddress,
+      final int callType,
+      final Bytes inputData) {
     final int callOrdinal = callOrdinalAllocator.getAndIncrement();
     final int[] opcodeExecutionCounts = new int[CALL_OPCODE_USAGE_VECTOR_LENGTH];
     opcodeExecutionCounts[CALL_ORDINAL_IDX] = callOrdinal;
     opcodeExecutionCounts[PARENT_CALL_ORDINAL_IDX] = parentCallOrdinal;
+    opcodeExecutionCounts[CALL_TYPE_IDX] = callType;
     perCallOpcodeUsage.add(opcodeExecutionCounts);
     perCallTargetAddress.add(targetAddress);
+    perCallFunctionSelector.add(functionSelector(callType, inputData));
     return opcodeExecutionCounts;
+  }
+
+  /**
+   * Extracts the Solidity function selector (first 4 calldata bytes as 8 hex chars), or {@link
+   * #MISSING_FUNCTION_SELECTOR} for creates / short calldata.
+   *
+   * @param callType frame call type
+   * @param inputData calldata
+   * @return 8-character hex selector or {@link #MISSING_FUNCTION_SELECTOR}
+   */
+  public static String functionSelector(final int callType, final Bytes inputData) {
+    if (callType == CALL_TYPE_CREATE
+        || callType == CALL_TYPE_CREATE2
+        || inputData == null
+        || inputData.size() < 4) {
+      return MISSING_FUNCTION_SELECTOR;
+    }
+    return inputData.slice(0, 4).toUnprefixedHexString();
   }
 
   /**

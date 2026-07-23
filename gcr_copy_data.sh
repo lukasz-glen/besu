@@ -51,6 +51,7 @@ build_call_opcode_copy_columns() {
   cols+=",parent_call_ordinal"
   cols+=",call_type"
   cols+=",call_target_address"
+  cols+=",call_function_selector"
   printf '%s' "$cols"
 }
 
@@ -72,7 +73,8 @@ copy_call_opcode_counts() {
   local block_id="$1"
   local txs_file="$2"
 
-  # txs CSV: transactionIndex, then 284 usage-vector fields (empty means 0), then call_target_address; no header.
+  # txs CSV: transactionIndex, then 284 usage-vector fields (empty means 0),
+  # then call_target_address, call_function_selector; no header.
   awk -F, -v block_id="$block_id" '
     BEGIN { int_fields = 285 }
     NF > 0 {
@@ -89,6 +91,12 @@ copy_call_opcode_counts() {
         printf ",%s", $(addr_idx)
       } else {
         printf ",0x0000000000000000000000000000000000000000"
+      }
+      sel_idx = int_fields + 2
+      if (sel_idx <= NF && $(sel_idx) != "") {
+        printf ",%s", $(sel_idx)
+      } else {
+        printf ",gggggggg"
       }
       printf "\n"
     }

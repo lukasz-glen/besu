@@ -772,6 +772,8 @@ public final class ReplayTransactionsFromDb {
             }
             w.write(',');
             w.write(call.targetAddress().toHexString());
+            w.write(',');
+            w.write(call.functionSelector());
             w.newLine();
           }
         }
@@ -1055,9 +1057,10 @@ public final class ReplayTransactionsFromDb {
       } else {
         final List<int[]> vectors = txValues.perCallOpcodeUsage();
         final List<Address> targets = txValues.perCallTargetAddress();
+        final List<String> selectors = txValues.perCallFunctionSelector();
         final ArrayList<CallReplayOpcodes> calls = new ArrayList<>(vectors.size());
         for (int i = 0; i < vectors.size(); i++) {
-          calls.add(new CallReplayOpcodes(vectors.get(i), targets.get(i)));
+          calls.add(new CallReplayOpcodes(vectors.get(i), targets.get(i), selectors.get(i)));
         }
         perCallOpcodeExecutionCounts = List.copyOf(calls);
       }
@@ -1103,7 +1106,8 @@ public final class ReplayTransactionsFromDb {
       int accessListAddressCount,
       int accessListStorageSlotCount) {}
 
-  /** Per-call usage vector plus the call/create target address. */
-  private record CallReplayOpcodes(int[] opcodeExecutionCounts, Address targetAddress) {}
+  /** Per-call usage vector plus the call/create target address and function selector. */
+  private record CallReplayOpcodes(
+      int[] opcodeExecutionCounts, Address targetAddress, String functionSelector) {}
 }
 

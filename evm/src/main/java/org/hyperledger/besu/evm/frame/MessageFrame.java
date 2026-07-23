@@ -1840,15 +1840,15 @@ public class MessageFrame {
           parentMessageFrame == null
               ? -1
               : parentMessageFrame.opcodeExecutionCounts[TxValues.CALL_ORDINAL_IDX];
-      final int[] opcodeExecutionCounts =
-          newTxValues.allocateCallOpcodeExecutionCounts(parentCallOrdinal, contract);
       final int resolvedCallType =
           callType >= 0
               ? callType
               : (type == Type.CONTRACT_CREATION
                   ? TxValues.CALL_TYPE_CREATE
                   : TxValues.CALL_TYPE_CALL);
-      opcodeExecutionCounts[TxValues.CALL_TYPE_IDX] = resolvedCallType;
+      final int[] opcodeExecutionCounts =
+          newTxValues.allocateCallOpcodeExecutionCounts(
+              parentCallOrdinal, contract, resolvedCallType, inputData);
 
       MessageFrame messageFrame =
           new MessageFrame(

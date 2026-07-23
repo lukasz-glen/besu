@@ -213,5 +213,8 @@ CREATE TABLE IF NOT EXISTS replay_call_opcode_counts (
     call_type INTEGER NOT NULL,
 
     -- called address (message call) or created contract address; not part of the int usage vector
-    call_target_address CHAR(42) NOT NULL
+    call_target_address CHAR(42) NOT NULL,
+
+    -- first 4 calldata bytes as 8 hex chars; 'gggggggg' for CREATE/CREATE2 or short calldata
+    call_function_selector CHAR(8) NOT NULL
 );

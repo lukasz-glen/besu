@@ -438,6 +438,7 @@ public final class ReplayTransactionsFromDb {
 
       try {
         while (true) {
+          final long totalStartNs = System.nanoTime();
           final PrefetchedBlock prefetched;
           try {
             prefetched = prefetchQueue.take();
@@ -508,6 +509,8 @@ public final class ReplayTransactionsFromDb {
               currentBlockNumber,
               block.getHeader().getStateRoot().getBytes().toHexString());
           intervalTimings.addWriteProgress(System.nanoTime() - writeProgressStartNs);
+
+          intervalTimings.addTotal(System.nanoTime() - totalStartNs);
 
           intervalTimings.incrementBlocks();
 
@@ -646,7 +649,7 @@ public final class ReplayTransactionsFromDb {
     final double processMs = nanosToMillis(timings.getProcessBlockNs());
     final double csvMs = nanosToMillis(timings.getWriteCsvNs());
     final double progressMs = nanosToMillis(timings.getWriteProgressNs());
-    final double totalMs = nanosToMillis(timings.totalNs());
+    final double totalMs = nanosToMillis(timings.getTotalNs());
     System.out.printf(
         "Processed block %d/%d | last %d blocks (ms): readSource=%.2f processBlock=%.2f writeCsv=%.2f writeProgress=%.2f total=%.2f%n",
         currentBlockNumber, toBlock, blocks, readMs, processMs, csvMs, progressMs, totalMs);
@@ -668,6 +671,7 @@ public final class ReplayTransactionsFromDb {
     private long processBlockNs;
     private long writeCsvNs;
     private long writeProgressNs;
+    private long totalNs;
     private long blocks;
 
     void addReadSourceBlock(final long nanos) {
@@ -684,6 +688,10 @@ public final class ReplayTransactionsFromDb {
 
     void addWriteProgress(final long nanos) {
       writeProgressNs += nanos;
+    }
+
+    void addTotal(final long nanos) {
+      totalNs += nanos;
     }
 
     void incrementBlocks() {
@@ -710,8 +718,8 @@ public final class ReplayTransactionsFromDb {
       return blocks;
     }
 
-    long totalNs() {
-      return readSourceBlockNs + processBlockNs + writeCsvNs + writeProgressNs;
+    long getTotalNs() {
+      return totalNs;
     }
 
     void reset() {
@@ -719,6 +727,7 @@ public final class ReplayTransactionsFromDb {
       processBlockNs = 0;
       writeCsvNs = 0;
       writeProgressNs = 0;
+      totalNs = 0;
       blocks = 0;
     }
   }
